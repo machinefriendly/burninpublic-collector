@@ -10,11 +10,34 @@ import json
 import os
 import secrets
 import sqlite3
+import ssl
 import urllib.request
 from datetime import datetime
 
+try:  # macOS python.org builds ship without system CA certs
+    import certifi
+    SSL_CTX = ssl.create_default_context(cafile=certifi.where())
+except ImportError:
+    SSL_CTX = ssl.create_default_context()
+
 DB = os.environ.get("AIWORK_DB", os.path.expanduser("~/.aiwork/local.db"))
 SALT_FILE = os.path.expanduser("~/.aiwork/salt")
+ENV_FILE = os.path.expanduser("~/.aiwork/supabase.env")
+
+
+def load_env_file():
+    """SUPABASE_URL / SUPABASE_KEY from ~/.aiwork/supabase.env unless already set."""
+    if not os.path.exists(ENV_FILE):
+        return
+    with open(ENV_FILE) as fh:
+        for line in fh:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, _, val = line.partition("=")
+                os.environ.setdefault(key, val)
+
+
+load_env_file()
 JOIN_TOLERANCE = 30 * 60          # request matches a sample up to 30 min older
 LOCAL_ONLY = os.environ.get("AIWORK_LOCAL_ONLY") == "1"
 REPORT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports")
@@ -79,7 +102,29 @@ def write_csv(agg):
     return path
 
 
-def push(agg, salt):
+def api(path, payload, key):
+    req = urllib.request.Request(
+        f"{os.environ['SUPABASE_URL']}/rest/v1/{path}",
+        data=json.dumps(payload).encode(), method="POST",
+        headers={"apikey": key, "Authorization": f"Bearer {key}",
+                 "Content-Type": "application/json",
+                 "Prefer": "resolution=merge-duplicates"})
+    with urllib.request.urlopen(req, context=SSL_CTX) as resp:
+        return resp.status
+
+
+def push_place_labels(db, salt, key):
+    """Upload user-chosen labels only — never MACs."""
+    rows = db.execute(
+        "SELECT mac, label, kind FROM places WHERE label IS NOT NULL").fetchall()
+    if rows:
+        payload = [{"place_hash": place_hash(mac, salt), "label": label,
+                    "kind": kind} for mac, label, kind in rows]
+        api("aiwork_places?on_conflict=place_hash", payload, key)
+    return len(rows)
+
+
+def push(db, agg, salt):
     url = os.environ.get("SUPABASE_URL")
     key = os.environ.get("SUPABASE_KEY")
     if not url or not key:
@@ -93,14 +138,10 @@ def push(agg, salt):
          "active_minutes": len(a[5])}
         for (day, _place, mac, source, model), a in sorted(agg.items())
     ]
-    req = urllib.request.Request(
-        f"{url}/rest/v1/aiwork_daily?on_conflict=day,place_hash,source,model",
-        data=json.dumps(payload).encode(), method="POST",
-        headers={"apikey": key, "Authorization": f"Bearer {key}",
-                 "Content-Type": "application/json",
-                 "Prefer": "resolution=merge-duplicates"})
-    with urllib.request.urlopen(req) as resp:
-        print(f"pushed {len(payload)} rows (HTTP {resp.status})")
+    status = api("aiwork_daily?on_conflict=day,place_hash,source,model",
+                 payload, key)
+    labels = push_place_labels(db, salt, key)
+    print(f"pushed {len(payload)} daily rows (HTTP {status}), {labels} place labels")
 
 
 def main():
@@ -113,7 +154,7 @@ def main():
     if LOCAL_ONLY:
         print(f"local-only: report written to {write_csv(agg)}")
     else:
-        push(agg, get_salt())
+        push(db, agg, get_salt())
 
 
 if __name__ == "__main__":
