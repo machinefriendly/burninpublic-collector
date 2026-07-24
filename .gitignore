@@ -1,0 +1,8 @@
+# personal data — never commit (MACs, places, token history)
+reports/
+*.db
+*.csv
+
+__pycache__/
+.DS_Store
+.claude/settings.local.json
