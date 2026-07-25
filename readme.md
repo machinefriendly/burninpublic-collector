@@ -1,4 +1,4 @@
-# mf-token
+# burninpublic-collector
 
 Track AI coding token usage (Claude Code + Codex) and *where* it happened,
 using the default-gateway MAC as a privacy-light place fingerprint.
@@ -20,7 +20,7 @@ Local database lives at `~/.aiwork/local.db` (override with `AIWORK_DB`).
 ## Setup
 
 ```bash
-cd /Users/lianglu/Documents/github/mf-taktoken
+cd burninpublic-collector
 chmod +x collect_place.sh
 
 ./collect_place.sh                            # first sample + creates schema
