@@ -24,17 +24,20 @@ try:
 except ImportError:
     SSL_CTX = ssl.create_default_context()
 
-GEO_COLUMNS = [
-    ("lat", "REAL"), ("lon", "REAL"), ("accuracy_m", "REAL"),
-    ("geo_name", "TEXT"), ("geo_full", "TEXT"),
-]
+GEO_COLUMNS = {
+    "lat": "ALTER TABLE places ADD COLUMN lat REAL",
+    "lon": "ALTER TABLE places ADD COLUMN lon REAL",
+    "accuracy_m": "ALTER TABLE places ADD COLUMN accuracy_m REAL",
+    "geo_name": "ALTER TABLE places ADD COLUMN geo_name TEXT",
+    "geo_full": "ALTER TABLE places ADD COLUMN geo_full TEXT",
+}
 
 
 def ensure_columns(db):
     have = {r[1] for r in db.execute("PRAGMA table_info(places)")}
-    for col, typ in GEO_COLUMNS:
+    for col, stmt in GEO_COLUMNS.items():
         if col not in have:
-            db.execute(f"ALTER TABLE places ADD COLUMN {col} {typ}")
+            db.execute(stmt)
 
 
 def current_gateway_mac():
