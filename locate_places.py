@@ -55,8 +55,23 @@ def current_gateway_mac():
         return None
 
 
+HELPER = os.path.expanduser("~/.aiwork/bin/aiwork-locate")
+
+
 def core_location_fix(timeout_s=25):
-    """Block until CoreLocation delivers a fix. Returns (lat, lon, accuracy)."""
+    """Block until CoreLocation delivers a fix. Returns (lat, lon, accuracy).
+
+    Prefers the compiled Swift helper (embedded Info.plist → macOS shows a
+    proper permission prompt); falls back to pyobjc for machines without it."""
+    if os.path.exists(HELPER):
+        run = subprocess.run([HELPER], capture_output=True, text=True,
+                             timeout=timeout_s + 10)
+        if run.returncode == 0 and run.stdout.strip():
+            lat, lon, acc = run.stdout.split()
+            return float(lat), float(lon), float(acc)
+        raise SystemExit(
+            f"aiwork-locate failed: {run.stderr.strip() or 'no fix'} — run "
+            f"'{HELPER}' once in Terminal.app and allow the location prompt")
     import CoreLocation
     from Foundation import NSDate, NSRunLoop
 
