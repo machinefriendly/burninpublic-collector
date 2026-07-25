@@ -1,0 +1,2 @@
+# Optional: HTTPS cert bundle for python.org macOS builds (scripts fall back to stdlib)
+certifi
