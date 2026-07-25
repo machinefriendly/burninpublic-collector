@@ -16,7 +16,7 @@ import urllib.request
 
 DB = os.environ.get("AIWORK_DB", os.path.expanduser("~/.aiwork/local.db"))
 NOMINATIM = "https://nominatim.openstreetmap.org/reverse"
-USER_AGENT = "taktoken/0.1 (https://github.com/machinefriendly/mf-taktoken)"
+USER_AGENT = "taktoken/0.1 (https://github.com/machinefriendly/mf-token)"
 
 try:
     import certifi

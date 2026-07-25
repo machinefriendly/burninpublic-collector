@@ -1,4 +1,4 @@
-# mf-taktoken
+# mf-token
 
 Track AI coding token usage (Claude Code + Codex) and *where* it happened,
 using the default-gateway MAC as a privacy-light place fingerprint.
