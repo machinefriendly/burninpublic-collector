@@ -56,10 +56,11 @@ def rows_from_codex(line, path, lineno):
     if ts is None:
         return None
     rid = f"codex:{os.path.basename(path)}:{lineno}"
+    cached = last.get("cached_input_tokens", 0) or 0
+    # OpenAI-style usage: input_tokens INCLUDES the cached portion.
+    fresh = max(0, (last.get("input_tokens", 0) or 0) - cached)
     return (rid, ts, "codex", None, info.get("model"),
-            last.get("input_tokens", 0) or 0,
-            last.get("output_tokens", 0) or 0,
-            last.get("cached_input_tokens", 0) or 0, 0)
+            fresh, last.get("output_tokens", 0) or 0, cached, 0)
 
 
 def scan(db, pattern, extract):
