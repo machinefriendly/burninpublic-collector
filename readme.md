@@ -8,7 +8,8 @@ using the default-gateway MAC as a privacy-light place fingerprint.
 | `local_schema.sql` | SQLite schema. Raw MACs and per-request rows never leave this file. |
 | `collect_place.sh` | Location sampler. Default-gateway MAC as the place fingerprint. Runs every 5 min. |
 | `parse_usage.py` | Scans `~/.claude/projects/**/*.jsonl` and `~/.codex/sessions/`. Incremental + dedups by `requestId`. |
-| `join_and_push.py` | As-of join, active-time rollup, salted-hash upload to Supabase. |
+| `join_and_push.py` | As-of join, active-time rollup, salted-hash upload to Supabase (as your account). |
+| `taktoken_login.py` | One-time account login; stores a refresh token in `~/.aiwork/session.json`. |
 | `places.py` | List and name detected places. |
 | `supabase_schema.sql` | Remote tables + the three metric views. |
 | `launchd/com.sig.aiwork.collect.plist` | 5-minute location sampler agent. |
@@ -32,8 +33,15 @@ python3 places.py aa:bb:cc:dd:ee:ff "home" home # name one
 `AIWORK_LOCAL_ONLY=1` writes the joined report to
 `reports/token_location_report.csv` instead of uploading.
 
-Nothing leaves the machine until you drop `AIWORK_LOCAL_ONLY` and set
-`SUPABASE_URL` / `SUPABASE_KEY`.
+Nothing leaves the machine until you drop `AIWORK_LOCAL_ONLY`, put
+`SUPABASE_URL` / `SUPABASE_ANON_KEY` in `~/.aiwork/supabase.env`, and log in:
+
+```bash
+python3 taktoken_login.py    # prompts for email + password
+```
+
+Uploads then run as *your* user under row-level security — each account sees
+only its own rows, and no admin keys are stored on the machine.
 
 ```bash
 sed -i '' "s|REPLACE_ME|$PWD|g" launchd/*.plist
