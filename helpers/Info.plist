@@ -5,9 +5,15 @@
     <key>CFBundleIdentifier</key>
     <string>com.sig.aiwork.locate</string>
     <key>CFBundleName</key>
+    <string>AiworkLocate</string>
+    <key>CFBundleExecutable</key>
     <string>aiwork-locate</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
     <key>CFBundleVersion</key>
     <string>1</string>
+    <key>LSUIElement</key>
+    <true/>
     <key>NSLocationUsageDescription</key>
     <string>TakToken stores your work places locally to map where your AI tokens are used. Coordinates never leave this machine except to your own database.</string>
     <key>NSLocationWhenInUseUsageDescription</key>

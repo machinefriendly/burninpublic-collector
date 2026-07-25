@@ -56,13 +56,30 @@ def current_gateway_mac():
 
 
 HELPER = os.path.expanduser("~/.aiwork/bin/aiwork-locate")
+APP = os.path.expanduser("~/.aiwork/bin/AiworkLocate.app")
+FIX_FILE = os.path.expanduser("~/.aiwork/last_fix.txt")
 
 
 def core_location_fix(timeout_s=25):
     """Block until CoreLocation delivers a fix. Returns (lat, lon, accuracy).
 
-    Prefers the compiled Swift helper (embedded Info.plist → macOS shows a
-    proper permission prompt); falls back to pyobjc for machines without it."""
+    Prefers the .app bundle launched via LaunchServices — the only form macOS
+    reliably shows a location permission prompt for. Falls back to the bare
+    helper binary, then pyobjc."""
+    if os.path.isdir(APP):
+        try:
+            os.remove(FIX_FILE)
+        except FileNotFoundError:
+            pass
+        subprocess.run(["open", "-W", APP], timeout=timeout_s + 20)
+        if os.path.exists(FIX_FILE):
+            with open(FIX_FILE) as fh:
+                lat, lon, acc = fh.read().split()
+            return float(lat), float(lon), float(acc)
+        raise SystemExit(
+            "no fix from AiworkLocate.app — check the permission prompt, or "
+            "enable 'AiworkLocate' in System Settings > Privacy & Security > "
+            "Location Services, then rerun")
     if os.path.exists(HELPER):
         run = subprocess.run([HELPER], capture_output=True, text=True,
                              timeout=timeout_s + 10)

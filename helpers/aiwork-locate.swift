@@ -21,7 +21,13 @@ final class Locator: NSObject, CLLocationManagerDelegate {
 
     func locationManager(_ m: CLLocationManager, didUpdateLocations locs: [CLLocation]) {
         guard let l = locs.last, l.horizontalAccuracy >= 0 else { return }
-        print("\(l.coordinate.latitude) \(l.coordinate.longitude) \(l.horizontalAccuracy)")
+        let line = "\(l.coordinate.latitude) \(l.coordinate.longitude) \(l.horizontalAccuracy)"
+        print(line)
+        // Also drop the fix to a file: when launched as an .app via `open`,
+        // stdout is not connected to the caller.
+        let out = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".aiwork/last_fix.txt")
+        try? (line + "\n").write(to: out, atomically: true, encoding: .utf8)
         exit(0)
     }
 
