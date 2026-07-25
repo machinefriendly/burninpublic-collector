@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """Log the collector into your BurnInPublic account (once per machine).
 
-    python3 login.py                     # prompts
-    python3 login.py EMAIL PASSWORD      # non-interactive
+    python3 login.py                     # email -> 6-digit code from your inbox
+    python3 login.py EMAIL PASSWORD      # password fallback, non-interactive
 
-Stores a refresh token in ~/.aiwork/session.json (0600). Uploads then run as
-YOUR user under row-level security — no admin keys on this machine.
+Passwordless by default: the same one-time email code as the web app, so
+Google / GitHub / magic-link accounts all work (Supabase links identities
+by verified email). Stores a refresh token in ~/.aiwork/session.json
+(0600). Uploads then run as YOUR user under row-level security — no admin
+keys on this machine.
 """
-import getpass
 import json
 import os
 import ssl
 import sys
+import urllib.error
 import urllib.request
 
 ENV_FILE = os.path.expanduser("~/.aiwork/supabase.env")
@@ -46,24 +49,43 @@ def load_env():
     return env
 
 
-def main():
-    env = load_env()
-    url, anon = env["SUPABASE_URL"], env["SUPABASE_ANON_KEY"]
-    email = sys.argv[1] if len(sys.argv) > 2 else input("email: ")
-    password = sys.argv[2] if len(sys.argv) > 2 else getpass.getpass("password: ")
-
+def post(url, payload, anon):
     req = urllib.request.Request(
-        f"{url}/auth/v1/token?grant_type=password",
-        data=json.dumps({"email": email, "password": password}).encode(),
+        url, data=json.dumps(payload).encode(),
         headers={"apikey": anon, "Content-Type": "application/json"})
-    with urllib.request.urlopen(req, context=SSL_CTX) as resp:
-        data = json.load(resp)
+    try:
+        with urllib.request.urlopen(req, context=SSL_CTX) as resp:
+            return json.load(resp)
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode(errors="replace")
+        raise SystemExit(f"auth failed ({e.code}): {detail}")
 
+
+def save_session(data):
     with open(SESSION_FILE, "w") as fh:
         json.dump({"user_id": data["user"]["id"],
                    "refresh_token": data["refresh_token"]}, fh)
     os.chmod(SESSION_FILE, 0o600)
-    print(f"logged in as {email} ({data['user']['id']})")
+    print(f"logged in as {data['user']['email']} ({data['user']['id']})")
+
+
+def main():
+    env = load_env()
+    url, anon = env["SUPABASE_URL"], env["SUPABASE_ANON_KEY"]
+
+    if len(sys.argv) > 2:                       # password fallback
+        data = post(f"{url}/auth/v1/token?grant_type=password",
+                    {"email": sys.argv[1], "password": sys.argv[2]}, anon)
+        return save_session(data)
+
+    email = sys.argv[1] if len(sys.argv) > 1 else input("email: ")
+    post(f"{url}/auth/v1/otp",
+         {"email": email, "create_user": True}, anon)
+    print(f"sent a 6-digit code to {email} — check your inbox")
+    code = input("code: ").strip()
+    data = post(f"{url}/auth/v1/verify",
+                {"type": "email", "email": email, "token": code}, anon)
+    save_session(data)
 
 
 if __name__ == "__main__":

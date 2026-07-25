@@ -69,16 +69,14 @@ sudo, everything under your own user.
 ## Connect your account
 
 ```bash
-python3 ~/.aiwork/bin/login.py     # email + password, once per machine
+python3 ~/.aiwork/bin/login.py     # enter email → 6-digit code from your inbox
 ```
 
-This stores a refresh token in `~/.aiwork/session.json` (mode 600) — no
-admin keys ever touch your machine, and uploads run as *you* under
-row-level security.
-
-> Signed up with Google/GitHub/magic link? The collector currently signs
-> in with email + password — set a password for your account first
-> (device pairing without passwords is on the roadmap).
+Passwordless, once per machine: the same one-time email code the web app
+uses, so it works no matter how you signed up — magic link, Google, or
+GitHub (identities are linked by verified email). It stores a refresh
+token in `~/.aiwork/session.json` (mode 600) — no admin keys ever touch
+your machine, and uploads run as *you* under row-level security.
 
 ## Name your places
 
