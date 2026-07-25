@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Log the collector into your BurnInPublic account (once per machine).
 
-    python3 login.py                     # email -> 6-digit code from your inbox
+    python3 login.py                     # email -> one-time code from your inbox
     python3 login.py EMAIL PASSWORD      # password fallback, non-interactive
 
 Passwordless by default: the same one-time email code as the web app, so
@@ -81,7 +81,7 @@ def main():
     email = sys.argv[1] if len(sys.argv) > 1 else input("email: ")
     post(f"{url}/auth/v1/otp",
          {"email": email, "create_user": True}, anon)
-    print(f"sent a 6-digit code to {email} — check your inbox")
+    print(f"sent a one-time code to {email} — check your inbox")
     code = input("code: ").strip()
     data = post(f"{url}/auth/v1/verify",
                 {"type": "email", "email": email, "token": code}, anon)

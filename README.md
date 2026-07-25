@@ -69,7 +69,7 @@ sudo, everything under your own user.
 ## Connect your account
 
 ```bash
-python3 ~/.aiwork/bin/login.py     # enter email → 6-digit code from your inbox
+python3 ~/.aiwork/bin/login.py     # enter email → one-time code from your inbox
 ```
 
 Passwordless, once per machine: the same one-time email code the web app
