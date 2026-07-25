@@ -114,12 +114,22 @@ def api(path, payload, key):
 
 
 def push_place_labels(db, salt, key):
-    """Upload user-chosen labels only — never MACs."""
+    """Upload labels + coordinates + OSM names — never MACs."""
+    have = {r[1] for r in db.execute("PRAGMA table_info(places)")}
+    geo = {"lat", "lon", "geo_name"}.issubset(have)
+    cols = "mac, label, kind" + (", lat, lon, geo_name" if geo else "")
     rows = db.execute(
-        "SELECT mac, label, kind FROM places WHERE label IS NOT NULL").fetchall()
+        f"SELECT {cols} FROM places WHERE label IS NOT NULL"
+        + (" OR lat IS NOT NULL" if geo else "")).fetchall()
     if rows:
-        payload = [{"place_hash": place_hash(mac, salt), "label": label,
-                    "kind": kind} for mac, label, kind in rows]
+        payload = []
+        for row in rows:
+            entry = {"place_hash": place_hash(row[0], salt),
+                     "label": row[1] or (row[5] if geo and row[5] else "Unnamed"),
+                     "kind": row[2]}
+            if geo:
+                entry.update({"lat": row[3], "lon": row[4], "geo_name": row[5]})
+            payload.append(entry)
         api("aiwork_places?on_conflict=place_hash", payload, key)
     return len(rows)
 

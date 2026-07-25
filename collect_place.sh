@@ -36,3 +36,10 @@ INSERT INTO places (mac, first_seen, last_seen) VALUES ('$MAC', $NOW, $NOW)
 SQL
 
 echo "sampled: $MAC (${SSID:-no ssid}) at $(date -r "$NOW" '+%F %T')"
+
+# One-time geolocation for a place we haven't located yet (best-effort:
+# silently skipped when Location Services permission is missing).
+HAS_GEO=$(sqlite3 "$DB" "SELECT COUNT(*) FROM pragma_table_info('places') WHERE name='lat'")
+if [ "$HAS_GEO" = "0" ] || [ -z "$(sqlite3 "$DB" "SELECT lat FROM places WHERE mac='$MAC' AND lat IS NOT NULL" 2>/dev/null)" ]; then
+    python3 "$SCRIPT_DIR/locate_places.py" >/dev/null 2>&1 || true
+fi
