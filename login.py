@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Log the collector into your TakToken account (once per machine).
+"""Log the collector into your BurnInPublic account (once per machine).
 
-    python3 taktoken_login.py                     # prompts
-    python3 taktoken_login.py EMAIL PASSWORD      # non-interactive
+    python3 login.py                     # prompts
+    python3 login.py EMAIL PASSWORD      # non-interactive
 
 Stores a refresh token in ~/.aiwork/session.json (0600). Uploads then run as
 YOUR user under row-level security — no admin keys on this machine.
@@ -24,13 +24,25 @@ except ImportError:
     SSL_CTX = ssl.create_default_context()
 
 
+# Hosted burninpublic.com backend. The anon key is a public, publishable
+# value (it ships in the web app's JS too) — the real protection is
+# row-level security on the server. Self-hosters override both via
+# ~/.aiwork/supabase.env.
+DEFAULT_URL = "https://fuicenrcljloczyvkqsg.supabase.co"
+DEFAULT_ANON = ("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIs"
+                "InJlZiI6ImZ1aWNlbnJjbGpsb2N6eXZrcXNnIiwicm9sZSI6ImFub24iLCJp"
+                "YXQiOjE3ODQ5MTc2MzgsImV4cCI6MjEwMDQ5MzYzOH0."
+                "D3WTP_WTiRQVSMEXrM_LI3Gf_nND_45WBboakrPZEYw")
+
+
 def load_env():
-    env = {}
-    with open(ENV_FILE) as fh:
-        for line in fh:
-            if "=" in line and not line.startswith("#"):
-                k, _, v = line.strip().partition("=")
-                env[k] = v
+    env = {"SUPABASE_URL": DEFAULT_URL, "SUPABASE_ANON_KEY": DEFAULT_ANON}
+    if os.path.exists(ENV_FILE):
+        with open(ENV_FILE) as fh:
+            for line in fh:
+                if "=" in line and not line.startswith("#"):
+                    k, _, v = line.strip().partition("=")
+                    env[k] = v
     return env
 
 

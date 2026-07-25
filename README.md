@@ -1,0 +1,138 @@
+# burninpublic-collector
+
+The open-source collector for [burninpublic.com](https://burninpublic.com) —
+see where your AI-coding tokens burn. It tracks Claude Code + Codex token
+usage on your Mac, joins it to the *places* you work from, and syncs daily
+totals to your private dashboard: map, trends, share cards.
+
+## How the system works
+
+Two parts:
+
+1. **This collector** (open source, runs on your machine) — samples a
+   privacy-light place fingerprint every 5 minutes, parses your local
+   Claude Code / Codex usage logs, and uploads **daily aggregates only**
+   to your account once a night (03:15).
+2. **The web app** ([burninpublic.com](https://burninpublic.com)) — your
+   dashboard. Sign in with magic link, Google, or GitHub; you see only
+   your own data.
+
+## Privacy model — what leaves your machine
+
+The collector is open source precisely so you can verify this table
+against the code (`join_and_push.py` is the only file that uploads).
+
+| Stays on your machine (never uploaded) | Uploaded to your account |
+|---|---|
+| Raw gateway MAC addresses (the place fingerprint) | A salted hash of each fingerprint — irreversible without the salt file that never leaves `~/.aiwork/salt` |
+| Per-request usage rows and timestamps | Daily totals: tokens by day × place × source × model, plus active minutes |
+| Project names, file paths | — |
+| Your prompts and code — **never even read**; only token *counts* are parsed from the logs | — |
+| Continuous location samples | Only the name + coordinates of places **you explicitly chose to name** |
+
+Every uploaded row is bound to your user id and protected by Postgres
+row-level security: no anonymous access, and no account can query another
+account's rows. See [`supabase_schema.sql`](supabase_schema.sql) for the
+exact policies. Don't want anything uploaded at all? Use
+[local-only mode](#local-only-mode) — full reports, nothing leaves the Mac.
+
+## Install (no clone needed)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/machinefriendly/burninpublic-collector/main/install.sh | bash
+```
+
+Prefer to read everything first? Same result:
+
+```bash
+git clone https://github.com/machinefriendly/burninpublic-collector.git
+cd burninpublic-collector && ./install.sh
+```
+
+The installer copies the scripts to `~/.aiwork/bin` and loads two launchd
+agents: a 5-minute place sampler and the nightly 03:15 sync. No root, no
+sudo, everything under your own user.
+
+## Permissions it will ask for — and why
+
+- **Location Services** (one macOS prompt, *optional*): the bundled
+  `AiworkLocate.app` resolves your named places to map coordinates, once
+  per place. Deny it and everything else still works — your dashboard
+  simply shows places without a real map position.
+- **Background agents** (launchd): the 5-minute sampler and nightly sync.
+  Visible via `launchctl list | grep aiwork`; uninstall removes them.
+- **Read access to local usage logs**: `~/.claude/projects/**/*.jsonl`
+  and `~/.codex/sessions/` — read-only, parsed locally for token counts.
+- Nothing else: no root, no Full Disk Access, no browser access, no
+  network traffic except the nightly upload to your own account.
+
+## Connect your account
+
+```bash
+python3 ~/.aiwork/bin/login.py     # email + password, once per machine
+```
+
+This stores a refresh token in `~/.aiwork/session.json` (mode 600) — no
+admin keys ever touch your machine, and uploads run as *you* under
+row-level security.
+
+> Signed up with Google/GitHub/magic link? The collector currently signs
+> in with email + password — set a password for your account first
+> (device pairing without passwords is on the roadmap).
+
+## Name your places
+
+```bash
+python3 ~/.aiwork/bin/places.py                          # list detected places
+python3 ~/.aiwork/bin/places.py aa:bb:cc:dd:ee:ff "wework" work   # name one
+```
+
+Naming a place is what opts it into geolocation + map display.
+
+## Local-only mode
+
+```bash
+AIWORK_LOCAL_ONLY=1 python3 ~/.aiwork/bin/join_and_push.py
+```
+
+Writes the full joined report to `reports/token_location_report.csv`
+instead of uploading — inspect exactly what *would* be sent, or just use
+the collector as a fully offline tracker.
+
+## Self-hosting
+
+Don't want to use the hosted backend? Create your own
+[Supabase](https://supabase.com) project, apply
+[`supabase_schema.sql`](supabase_schema.sql), and point the collector at
+it via `~/.aiwork/supabase.env`:
+
+```
+SUPABASE_URL=https://YOUR-PROJECT.supabase.co
+SUPABASE_ANON_KEY=YOUR-ANON-KEY
+```
+
+## Uninstall
+
+```bash
+launchctl unload ~/Library/LaunchAgents/com.sig.aiwork.*.plist
+rm -f ~/Library/LaunchAgents/com.sig.aiwork.*.plist
+rm -rf ~/.aiwork        # includes the local database — export first if you care
+```
+
+## Files
+
+| File | Purpose |
+|---|---|
+| `collect_place.sh` | 5-min place sampler (default-gateway MAC as fingerprint). |
+| `parse_usage.py` | Parses Claude Code / Codex logs locally. Incremental, dedups by request id. |
+| `join_and_push.py` | As-of join, daily rollup, salted-hash upload. The only file that uploads. |
+| `login.py` | One-time account login (stores a refresh token, 0600). |
+| `places.py` | List and name detected places. |
+| `locate_places.py` | Resolves named places to coordinates (CoreLocation + OpenStreetMap). |
+| `local_schema.sql` | Local SQLite schema (`~/.aiwork/local.db`). |
+| `supabase_schema.sql` | Server schema snapshot, for auditing RLS or self-hosting. |
+| `install.sh` / `launchd/` | Installer + the two launchd agents. |
+
+MIT licensed. Historical note: requests recorded before your first location
+sample join to `unknown` — the as-of join only matches samples up to 30
+minutes older than a request.

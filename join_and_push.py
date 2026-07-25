@@ -39,6 +39,16 @@ def load_env_file():
 
 
 load_env_file()
+# Hosted burninpublic.com backend by default; the anon key is public by
+# design (row-level security is the real protection). Self-hosters override
+# both via ~/.aiwork/supabase.env.
+os.environ.setdefault("SUPABASE_URL", "https://fuicenrcljloczyvkqsg.supabase.co")
+os.environ.setdefault(
+    "SUPABASE_ANON_KEY",
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIs"
+    "InJlZiI6ImZ1aWNlbnJjbGpsb2N6eXZrcXNnIiwicm9sZSI6ImFub24iLCJp"
+    "YXQiOjE3ODQ5MTc2MzgsImV4cCI6MjEwMDQ5MzYzOH0."
+    "D3WTP_WTiRQVSMEXrM_LI3Gf_nND_45WBboakrPZEYw")
 JOIN_TOLERANCE = 30 * 60          # request matches a sample up to 30 min older
 LOCAL_ONLY = os.environ.get("AIWORK_LOCAL_ONLY") == "1"
 REPORT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports")
@@ -109,7 +119,7 @@ def authenticate():
     Tokens rotate on every use; the new refresh token is persisted."""
     anon = os.environ.get("SUPABASE_ANON_KEY")
     if not anon or not os.path.exists(SESSION_FILE):
-        raise SystemExit("not logged in — run: python3 taktoken_login.py")
+        raise SystemExit("not logged in — run: python3 ~/.aiwork/bin/login.py")
     with open(SESSION_FILE) as fh:
         session = json.load(fh)
     req = urllib.request.Request(
