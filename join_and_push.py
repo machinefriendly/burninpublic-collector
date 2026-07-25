@@ -23,6 +23,7 @@ except ImportError:
 DB = os.environ.get("AIWORK_DB", os.path.expanduser("~/.aiwork/local.db"))
 SALT_FILE = os.path.expanduser("~/.aiwork/salt")
 ENV_FILE = os.path.expanduser("~/.aiwork/supabase.env")
+SESSION_FILE = os.path.expanduser("~/.aiwork/session.json")
 
 
 def load_env_file():
@@ -102,18 +103,41 @@ def write_csv(agg):
     return path
 
 
-def api(path, payload, key):
+def authenticate():
+    """Refresh-token -> short-lived user JWT. Returns (jwt, user_id).
+
+    Tokens rotate on every use; the new refresh token is persisted."""
+    anon = os.environ.get("SUPABASE_ANON_KEY")
+    if not anon or not os.path.exists(SESSION_FILE):
+        raise SystemExit("not logged in — run: python3 taktoken_login.py")
+    with open(SESSION_FILE) as fh:
+        session = json.load(fh)
+    req = urllib.request.Request(
+        f"{os.environ['SUPABASE_URL']}/auth/v1/token?grant_type=refresh_token",
+        data=json.dumps({"refresh_token": session["refresh_token"]}).encode(),
+        headers={"apikey": anon, "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, context=SSL_CTX) as resp:
+        data = json.load(resp)
+    session["refresh_token"] = data["refresh_token"]
+    with open(SESSION_FILE, "w") as fh:
+        json.dump(session, fh)
+    os.chmod(SESSION_FILE, 0o600)
+    return data["access_token"], data["user"]["id"]
+
+
+def api(path, payload, jwt):
     req = urllib.request.Request(
         f"{os.environ['SUPABASE_URL']}/rest/v1/{path}",
         data=json.dumps(payload).encode(), method="POST",
-        headers={"apikey": key, "Authorization": f"Bearer {key}",
+        headers={"apikey": os.environ["SUPABASE_ANON_KEY"],
+                 "Authorization": f"Bearer {jwt}",
                  "Content-Type": "application/json",
                  "Prefer": "resolution=merge-duplicates"})
     with urllib.request.urlopen(req, context=SSL_CTX) as resp:
         return resp.status
 
 
-def push_place_labels(db, salt, key):
+def push_place_labels(db, salt, jwt, uid):
     """Upload labels + coordinates + OSM names — never MACs."""
     have = {r[1] for r in db.execute("PRAGMA table_info(places)")}
     geo = {"lat", "lon", "geo_name"}.issubset(have)
@@ -124,33 +148,33 @@ def push_place_labels(db, salt, key):
     if rows:
         payload = []
         for row in rows:
-            entry = {"place_hash": place_hash(row[0], salt),
+            entry = {"user_id": uid,
+                     "place_hash": place_hash(row[0], salt),
                      "label": row[1] or (row[5] if geo and row[5] else "Unnamed"),
                      "kind": row[2]}
             if geo:
                 entry.update({"lat": row[3], "lon": row[4], "geo_name": row[5]})
             payload.append(entry)
-        api("aiwork_places?on_conflict=place_hash", payload, key)
+        api("aiwork_places?on_conflict=user_id,place_hash", payload, jwt)
     return len(rows)
 
 
 def push(db, agg, salt):
-    url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_KEY")
-    if not url or not key:
-        raise SystemExit("SUPABASE_URL / SUPABASE_KEY not set "
-                         "(or run with AIWORK_LOCAL_ONLY=1)")
+    if not os.environ.get("SUPABASE_URL"):
+        raise SystemExit("SUPABASE_URL not set (or run with AIWORK_LOCAL_ONLY=1)")
+    jwt, uid = authenticate()
     payload = [
-        {"day": day, "place_hash": place_hash(mac, salt) if mac else None,
+        {"user_id": uid, "day": day,
+         "place_hash": place_hash(mac, salt) if mac else None,
          "source": source, "model": model, "requests": a[0],
          "input_tokens": a[1], "output_tokens": a[2],
          "cache_read_tokens": a[3], "cache_creation_tokens": a[4],
          "active_minutes": len(a[5])}
         for (day, _place, mac, source, model), a in sorted(agg.items())
     ]
-    status = api("aiwork_daily?on_conflict=day,place_hash,source,model",
-                 payload, key)
-    labels = push_place_labels(db, salt, key)
+    status = api("aiwork_daily?on_conflict=user_id,day,place_hash,source,model",
+                 payload, jwt)
+    labels = push_place_labels(db, salt, jwt, uid)
     print(f"pushed {len(payload)} daily rows (HTTP {status}), {labels} place labels")
 
 
