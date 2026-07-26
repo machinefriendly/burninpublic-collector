@@ -14,6 +14,8 @@ import ssl
 import urllib.request
 from datetime import datetime, timezone
 
+from place_key import cell_centre, grid_cell
+
 try:  # macOS python.org builds ship without system CA certs
     import certifi
     SSL_CTX = ssl.create_default_context(cafile=certifi.where())
@@ -52,9 +54,10 @@ os.environ.setdefault(
 JOIN_TOLERANCE = 30 * 60          # request matches a sample up to 30 min older
 UPLOAD_CHUNK = 500                # rows per POST
 LOCAL_ONLY = os.environ.get("AIWORK_LOCAL_ONLY") == "1"
-# Opt-in: also upload coordinates for places you never named. Off by default —
-# the privacy promise is that only places you explicitly named leave the Mac.
-SYNC_COORDS = os.environ.get("AIWORK_SYNC_COORDS") == "1"
+# Places you never named are uploaded at grid resolution so they can appear on
+# the map and be named from there. Set this to keep them off the server
+# entirely — then a place only exists remotely once you name it.
+HIDE_UNNAMED = os.environ.get("AIWORK_HIDE_UNNAMED") == "1"
 REPORT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports")
 
 
@@ -157,6 +160,20 @@ def authenticate():
     return data["access_token"], data["user"]["id"]
 
 
+def api_get(path, jwt):
+    req = urllib.request.Request(
+        f"{os.environ['SUPABASE_URL']}/rest/v1/{path}",
+        headers={"apikey": os.environ["SUPABASE_ANON_KEY"],
+                 "Authorization": f"Bearer {jwt}"})
+    try:
+        with urllib.request.urlopen(req, context=SSL_CTX) as resp:
+            return json.load(resp)
+    except urllib.error.HTTPError as err:
+        raise SystemExit(
+            f"read from {path.split('?')[0]} failed: HTTP {err.code} "
+            f"{err.read().decode(errors='replace')[:400]}")
+
+
 def api(path, payload, jwt):
     req = urllib.request.Request(
         f"{os.environ['SUPABASE_URL']}/rest/v1/{path}",
@@ -176,41 +193,87 @@ def api(path, payload, jwt):
             f"{err.read().decode(errors='replace')[:400]}")
 
 
-# Literal statements, selected by (geo columns present, sync-coords opt-in).
+# Literal statements, selected by (geo columns present, unnamed places hidden).
 # Assembling this SQL from fragments would read as an injection site to any
 # reviewer or scanner even though every fragment is a constant.
 PLACE_QUERIES = {
     (True, False): "SELECT mac, label, kind, lat, lon, geo_name FROM places "
-                   "WHERE label IS NOT NULL",
+                   "WHERE label IS NOT NULL OR lat IS NOT NULL",
     (True, True): "SELECT mac, label, kind, lat, lon, geo_name FROM places "
-                  "WHERE label IS NOT NULL OR lat IS NOT NULL",
+                  "WHERE label IS NOT NULL",
+    (False, True): "SELECT mac, label, kind FROM places "
+                   "WHERE label IS NOT NULL",
     (False, False): "SELECT mac, label, kind FROM places "
                     "WHERE label IS NOT NULL",
 }
 
 
-def push_place_labels(db, salt, jwt, uid):
-    """Upload the places you explicitly named — label, coords, OSM name.
+def coarse(lat, lon):
+    """Snap a fix to the same grid the portable-gateway fingerprint uses.
 
-    Never MACs, and never a place you did not name: the collector geolocates
-    places automatically, and uploading those coordinates unasked would break
-    the promise in the README's privacy table. AIWORK_SYNC_COORDS=1 opts into
-    syncing auto-located places too (they show up as their OSM name)."""
+    What leaves the machine for a place you have not named is which cell you
+    worked in, not where in it. Idempotent for grid places — their stored
+    coordinates are already a cell centre."""
+    return cell_centre(grid_cell(lat, lon))
+
+
+def ensure_label_shadow(db):
+    """`label_synced` mirrors the label as the server last knew it.
+
+    Comparing local label / shadow / remote label is what lets renaming work
+    from either side without a clock: whichever side differs from the shadow is
+    the side that changed."""
+    have = {r[1] for r in db.execute("PRAGMA table_info(places)")}
+    if "label_synced" not in have:
+        db.execute("ALTER TABLE places ADD COLUMN label_synced TEXT")
+        db.commit()
+
+
+def sync_place_labels(db, salt, jwt, uid):
+    """Reconcile labels with the server, then upload places.
+
+    Labels can be set locally (places.py) or remotely (rename on the web), so
+    this is a three-way merge against `label_synced`:
+      * local differs from shadow  → the machine renamed it, push it up
+      * remote differs from shadow → the web renamed it, pull it down
+      * both differ                → the web wins (it is the newer surface and
+        the only one a user can reach from another device)
+
+    Coordinates: exact for places you named, grid-coarse for the rest, and
+    absent entirely under AIWORK_HIDE_UNNAMED=1."""
+    ensure_label_shadow(db)
+    remote = {r["place_hash"]: (r.get("label") or "")
+              for r in api_get("aiwork_places?select=place_hash,label", jwt)}
+
     have = {r[1] for r in db.execute("PRAGMA table_info(places)")}
     geo = {"lat", "lon", "geo_name"}.issubset(have)
-    rows = db.execute(PLACE_QUERIES[(geo, geo and SYNC_COORDS)]).fetchall()
-    if rows:
-        payload = []
-        for row in rows:
-            entry = {"user_id": uid,
-                     "place_hash": place_hash(row[0], salt),
-                     "label": row[1] or (row[5] if geo and row[5] else "Unnamed"),
-                     "kind": row[2]}
-            if geo:
-                entry.update({"lat": row[3], "lon": row[4], "geo_name": row[5]})
-            payload.append(entry)
+    rows = db.execute(PLACE_QUERIES[(geo, HIDE_UNNAMED)]).fetchall()
+
+    payload, pulled = [], 0
+    for row in rows:
+        key, label, kind = row[0], row[1] or "", row[2]
+        phash = place_hash(key, salt)
+        shadow = db.execute("SELECT label_synced FROM places WHERE mac = ?",
+                            (key,)).fetchone()[0] or ""
+        remote_label = remote.get(phash, "")
+        if remote_label and remote_label != shadow and remote_label != label:
+            label = remote_label            # renamed on the web → adopt it
+            db.execute("UPDATE places SET label = ? WHERE mac = ?", (label, key))
+            pulled += 1
+        db.execute("UPDATE places SET label_synced = ? WHERE mac = ?",
+                   (label, key))
+
+        entry = {"user_id": uid, "place_hash": phash, "label": label,
+                 "kind": kind}
+        if geo and row[3] is not None:
+            lat, lon = (row[3], row[4]) if label else coarse(row[3], row[4])
+            entry.update({"lat": lat, "lon": lon, "geo_name": row[5]})
+        payload.append(entry)
+
+    db.commit()
+    if payload:
         api("aiwork_places?on_conflict=user_id,place_hash", payload, jwt)
-    return len(rows)
+    return len(payload), pulled
 
 
 def push(db, agg, salt):
@@ -232,9 +295,9 @@ def push(db, agg, salt):
     status = None
     for start in range(0, len(payload), UPLOAD_CHUNK):
         status = api(path, payload[start:start + UPLOAD_CHUNK], jwt)
-    labels = push_place_labels(db, salt, jwt, uid)
+    places, pulled = sync_place_labels(db, salt, jwt, uid)
     print(f"pushed {len(payload)} hourly rows (HTTP {status}), "
-          f"{labels} place labels")
+          f"{places} places" + (f", {pulled} renamed on the web" if pulled else ""))
 
 
 def main():

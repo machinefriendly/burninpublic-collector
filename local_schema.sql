@@ -14,11 +14,12 @@ CREATE TABLE IF NOT EXISTS location_samples (
 );
 
 CREATE TABLE IF NOT EXISTS places (
-    mac        TEXT PRIMARY KEY,            -- place key = place fingerprint
-    label      TEXT,                        -- human name, set via places.py
-    kind       TEXT,                        -- e.g. home / office / cafe
-    first_seen INTEGER,
-    last_seen  INTEGER
+    mac          TEXT PRIMARY KEY,          -- place key = place fingerprint
+    label        TEXT,                      -- human name (places.py, or the web)
+    label_synced TEXT,                      -- label as the server last knew it
+    kind         TEXT,                      -- e.g. home / office / cafe
+    first_seen   INTEGER,
+    last_seen    INTEGER
 );
 
 -- Last CoreLocation fix, for the portable-gateway path only. Single row.

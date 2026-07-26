@@ -28,20 +28,23 @@ against the code (`join_and_push.py` is the only file that uploads).
 | Per-request usage rows and timestamps | Hourly totals: tokens by UTC hour × place × source × model, plus active minutes |
 | Project names, file paths | — |
 | Your prompts and code — **never even read**; only token *counts* are parsed from the logs | — |
-| Continuous location samples, and every exact GPS fix | Only the name + coordinates of places **you explicitly named** with `places.py` — an auto-detected place you never named is never uploaded, not even its coordinates |
+| Continuous location samples, and every exact GPS fix | Which **~250 m cell** each detected place sits in, plus its neighbourhood name. Places **you named** upload their exact coordinates instead — naming is consent |
 
-Two details worth knowing about that table:
+Three details worth knowing about that table:
 
 - **Why hours, not days.** Buckets are UTC hours so your dashboard can show
   days in *your* timezone — a day-level total can't be re-cut across another
   timezone's midnight, and your Mac's timezone isn't necessarily where you are.
   An hour bucket says "some requests happened in this hour", never when inside
   it or what they were.
-- **Coordinates are coarse for hotspot places.** When your gateway is a phone
-  hotspot, the fingerprint is a ~250 m grid cell (see
-  [`place_key.py`](place_key.py)) and the stored coordinates are the cell's
-  centre, not your exact fix. If you then name that place and it syncs, it
-  reveals the cell, not the desk.
+- **Why unnamed places are uploaded at all.** So they appear on your map, where
+  you can name them — otherwise naming would only be possible in the terminal,
+  and a place you haven't named yet would be invisible. What that costs you is
+  bounded and stated: which 250 m cell, never where in it. Naming a place then
+  upgrades it to its exact fix, because at that point you have chosen to.
+- **Want the stricter rule?** `AIWORK_HIDE_UNNAMED=1` keeps unnamed places off
+  the server entirely — a place then only exists remotely once you name it with
+  `places.py`. Nothing else changes.
 
 Every uploaded row is bound to your user id and protected by Postgres
 row-level security: no anonymous access, and no account can query another
