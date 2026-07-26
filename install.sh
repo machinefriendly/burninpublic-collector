@@ -26,8 +26,8 @@ fi
 
 mkdir -p "$BIN" "$AGENTS"
 cp "$SRC"/collect_place.sh "$SRC"/parse_usage.py "$SRC"/join_and_push.py \
-   "$SRC"/places.py "$SRC"/locate_places.py "$SRC"/login.py \
-   "$SRC"/local_schema.sql "$BIN/"
+   "$SRC"/places.py "$SRC"/locate_places.py "$SRC"/place_key.py \
+   "$SRC"/login.py "$SRC"/local_schema.sql "$BIN/"
 chmod +x "$BIN/collect_place.sh"
 
 # Location helper as an .app bundle — the only form macOS reliably shows a

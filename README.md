@@ -11,8 +11,8 @@ Two parts:
 
 1. **This collector** (open source, runs on your machine) — samples a
    privacy-light place fingerprint every 5 minutes, parses your local
-   Claude Code / Codex usage logs, and uploads **daily aggregates only**
-   to your account once a night (03:15).
+   Claude Code / Codex usage logs, and uploads **aggregates only** —
+   hourly totals, no individual requests — once a night (03:15).
 2. **The web app** ([burninpublic.com](https://burninpublic.com)) — your
    dashboard. Sign in with magic link, Google, or GitHub; you see only
    your own data.
@@ -25,10 +25,23 @@ against the code (`join_and_push.py` is the only file that uploads).
 | Stays on your machine (never uploaded) | Uploaded to your account |
 |---|---|
 | Raw gateway MAC addresses (the place fingerprint) | A salted hash of each fingerprint — irreversible without the salt file that never leaves `~/.aiwork/salt` |
-| Per-request usage rows and timestamps | Daily totals: tokens by day × place × source × model, plus active minutes |
+| Per-request usage rows and timestamps | Hourly totals: tokens by UTC hour × place × source × model, plus active minutes |
 | Project names, file paths | — |
 | Your prompts and code — **never even read**; only token *counts* are parsed from the logs | — |
-| Continuous location samples | Only the name + coordinates of places **you explicitly chose to name** |
+| Continuous location samples, and every exact GPS fix | Only the name + coordinates of places **you explicitly named** with `places.py` — an auto-detected place you never named is never uploaded, not even its coordinates |
+
+Two details worth knowing about that table:
+
+- **Why hours, not days.** Buckets are UTC hours so your dashboard can show
+  days in *your* timezone — a day-level total can't be re-cut across another
+  timezone's midnight, and your Mac's timezone isn't necessarily where you are.
+  An hour bucket says "some requests happened in this hour", never when inside
+  it or what they were.
+- **Coordinates are coarse for hotspot places.** When your gateway is a phone
+  hotspot, the fingerprint is a ~250 m grid cell (see
+  [`place_key.py`](place_key.py)) and the stored coordinates are the cell's
+  centre, not your exact fix. If you then name that place and it syncs, it
+  reveals the cell, not the desk.
 
 Every uploaded row is bound to your user id and protected by Postgres
 row-level security: no anonymous access, and no account can query another
