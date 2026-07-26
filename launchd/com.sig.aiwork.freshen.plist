@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Frequent incremental pass. The place list on the dashboard is derived from
+     uploaded usage rollups, so a place stays invisible until some usage has
+     been attributed to it and pushed. Nightly-only syncing meant a new place
+     took until the next morning to appear. This uploads just the last two days
+     of buckets (upserts, so re-running is free); com.sig.aiwork.sync still does
+     the full reconciliation at 03:15. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.sig.aiwork.freshen</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>cd REPLACE_ME &amp;&amp; /usr/bin/python3 parse_usage.py &amp;&amp; /usr/bin/python3 join_and_push.py --since-hours 48</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>900</integer>
+    <key>StandardOutPath</key>
+    <string>/tmp/aiwork.freshen.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/aiwork.freshen.log</string>
+</dict>
+</plist>

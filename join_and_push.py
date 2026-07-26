@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """As-of join, active-time rollup, salted-hash upload to Supabase.
 
+    python3 join_and_push.py                  # full history (nightly pass)
+    python3 join_and_push.py --since-hours 48 # only recent buckets
+
 AIWORK_LOCAL_ONLY=1 skips the upload and writes the joined report to CSV
 so you can inspect before anything leaves the machine.
 """
+import argparse
 import csv
 import hashlib
 import json
@@ -11,6 +15,7 @@ import os
 import secrets
 import sqlite3
 import ssl
+import time
 import urllib.request
 from datetime import datetime, timezone
 
@@ -79,17 +84,28 @@ def place_hash(place_key, salt):
     return hashlib.sha256(f"{salt}:{place_key}".encode()).hexdigest()[:16]
 
 
-def joined_rows(db):
-    """Per request: as-of join to the latest location sample <= ts."""
-    return db.execute("""
-        SELECT u.request_id, u.ts, u.source, u.project, u.model,
-               u.input_tokens, u.output_tokens,
-               u.cache_read_tokens, u.cache_creation_tokens,
-               (SELECT s.gateway_mac FROM location_samples s
-                 WHERE s.ts <= u.ts AND s.ts >= u.ts - ?
-                 ORDER BY s.ts DESC LIMIT 1) AS place_key
-        FROM usage_requests u ORDER BY u.ts
-    """, (JOIN_TOLERANCE,)).fetchall()
+_JOIN_SELECT = """
+    SELECT u.request_id, u.ts, u.source, u.project, u.model,
+           u.input_tokens, u.output_tokens,
+           u.cache_read_tokens, u.cache_creation_tokens,
+           (SELECT s.gateway_mac FROM location_samples s
+             WHERE s.ts <= u.ts AND s.ts >= u.ts - ?
+             ORDER BY s.ts DESC LIMIT 1) AS place_key
+    FROM usage_requests u
+"""
+JOIN_ALL = _JOIN_SELECT + " ORDER BY u.ts"
+JOIN_SINCE = _JOIN_SELECT + " WHERE u.ts >= ? ORDER BY u.ts"
+
+
+def joined_rows(db, since_ts=None):
+    """Per request: as-of join to the latest location sample <= ts.
+
+    `since_ts` limits the pass to recent requests. Hour buckets are disjoint, so
+    a windowed run re-computes whole buckets and the upsert replaces them —
+    which is what makes a 15-minute cadence cheap enough to be worth running."""
+    if since_ts is None:
+        return db.execute(JOIN_ALL, (JOIN_TOLERANCE,)).fetchall()
+    return db.execute(JOIN_SINCE, (JOIN_TOLERANCE, since_ts)).fetchall()
 
 
 def rollup(db, rows):
@@ -135,12 +151,18 @@ def write_csv(agg):
 def authenticate():
     """Refresh-token -> short-lived user JWT. Returns (jwt, user_id).
 
-    Tokens rotate on every use; the new refresh token is persisted."""
+    The access token is cached until shortly before it expires. Refresh tokens
+    rotate on every use and the old one dies immediately, so a run interrupted
+    mid-rotation can strand the machine — worth avoiding now that syncs are
+    frequent rather than nightly."""
     anon = os.environ.get("SUPABASE_ANON_KEY")
     if not anon or not os.path.exists(SESSION_FILE):
         raise SystemExit("not logged in — run: python3 ~/.aiwork/bin/login.py")
     with open(SESSION_FILE) as fh:
         session = json.load(fh)
+    cached, expires = session.get("access_token"), session.get("access_expires", 0)
+    if cached and session.get("user_id") and expires - time.time() > 300:
+        return cached, session["user_id"]
     req = urllib.request.Request(
         f"{os.environ['SUPABASE_URL']}/auth/v1/token?grant_type=refresh_token",
         data=json.dumps({"refresh_token": session["refresh_token"]}).encode(),
@@ -153,7 +175,12 @@ def authenticate():
             f"sign-in expired (HTTP {err.code} "
             f"{err.read().decode(errors='replace')[:200]}) — reconnect with: "
             "python3 ~/.aiwork/bin/login.py")
-    session["refresh_token"] = data["refresh_token"]
+    session.update({
+        "refresh_token": data["refresh_token"],
+        "user_id": data["user"]["id"],
+        "access_token": data["access_token"],
+        "access_expires": time.time() + data.get("expires_in", 3600),
+    })
     with open(SESSION_FILE, "w") as fh:
         json.dump(session, fh)
     os.chmod(SESSION_FILE, 0o600)
@@ -301,10 +328,22 @@ def push(db, agg, salt):
 
 
 def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--since-hours", type=float, default=None,
+                    help="only roll up and upload requests this recent "
+                         "(default: the whole history)")
+    args = ap.parse_args()
+    # Floor to the UTC hour. A bucket is rebuilt from scratch and upserted, so
+    # a boundary falling mid-hour would replace that hour's complete row with
+    # only the part of it inside the window — silently dropping tokens.
+    since = (int(time.time() - args.since_hours * 3600) // 3600 * 3600
+             if args.since_hours else None)
+
     db = sqlite3.connect(DB)
-    rows = joined_rows(db)
+    rows = joined_rows(db, since)
     matched = sum(1 for r in rows if r[9])
-    print(f"{len(rows)} requests, {matched} matched to a place "
+    scope = f"last {args.since_hours:g}h" if since else "all history"
+    print(f"{len(rows)} requests ({scope}), {matched} matched to a place "
           f"({len(rows) - matched} unknown)")
     agg = rollup(db, rows)
     if LOCAL_ONLY:

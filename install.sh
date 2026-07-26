@@ -45,7 +45,7 @@ else
     echo "swiftc not found — geolocation helper skipped (usage tracking unaffected)"
 fi
 
-for name in collect sync; do
+for name in collect freshen sync; do
     plist="$AGENTS/com.sig.aiwork.$name.plist"
     sed "s|REPLACE_ME|$BIN|g" "$SRC/launchd/com.sig.aiwork.$name.plist" > "$plist"
     launchctl unload "$plist" 2>/dev/null || true

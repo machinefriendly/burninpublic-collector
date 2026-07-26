@@ -12,7 +12,8 @@ Two parts:
 1. **This collector** (open source, runs on your machine) — samples a
    privacy-light place fingerprint every 5 minutes, parses your local
    Claude Code / Codex usage logs, and uploads **aggregates only** —
-   hourly totals, no individual requests — once a night (03:15).
+   hourly totals, no individual requests — every 15 minutes (just the
+   last two days), plus a full reconciliation pass nightly at 03:15.
 2. **The web app** ([burninpublic.com](https://burninpublic.com)) — your
    dashboard. Sign in with magic link, Google, or GitHub; you see only
    your own data.
@@ -66,8 +67,8 @@ cd burninpublic-collector && ./install.sh
 ```
 
 The installer copies the scripts to `~/.aiwork/bin` and loads two launchd
-agents: a 5-minute place sampler and the nightly 03:15 sync. No root, no
-sudo, everything under your own user.
+agents: a 5-minute place sampler, a 15-minute incremental sync, and the
+nightly 03:15 full sync. No root, no sudo, everything under your own user.
 
 ## Permissions it will ask for — and why
 
@@ -75,12 +76,13 @@ sudo, everything under your own user.
   `AiworkLocate.app` resolves your named places to map coordinates, once
   per place. Deny it and everything else still works — your dashboard
   simply shows places without a real map position.
-- **Background agents** (launchd): the 5-minute sampler and nightly sync.
+- **Background agents** (launchd): the 5-minute sampler, the 15-minute
+  incremental sync, and the nightly full sync.
   Visible via `launchctl list | grep aiwork`; uninstall removes them.
 - **Read access to local usage logs**: `~/.claude/projects/**/*.jsonl`
   and `~/.codex/sessions/` — read-only, parsed locally for token counts.
 - Nothing else: no root, no Full Disk Access, no browser access, no
-  network traffic except the nightly upload to your own account.
+  network traffic except the aggregate uploads to your own account.
 
 ## Connect your account
 
