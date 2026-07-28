@@ -30,7 +30,13 @@ CREATE TABLE public.aiwork_daily (
         UNIQUE NULLS NOT DISTINCT (user_id, day, hour, place_hash, source, model)
 );
 ALTER TABLE public.aiwork_daily ENABLE ROW LEVEL SECURITY;
-GRANT SELECT, INSERT, UPDATE ON public.aiwork_daily TO authenticated;
+-- DELETE is granted because the collector's push has to be authoritative for
+-- the window it covers, not merely additive: a request can move between
+-- place_hashes (re-keying, hysteresis, a nearer location sample), and without
+-- a delete the superseded row survives and the server's total drifts above
+-- the machine's. The RLS policy below is FOR ALL, so a delete can only ever
+-- reach the caller's own rows — which also means you can erase your own data.
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.aiwork_daily TO authenticated;
 CREATE POLICY aiwork_daily_own ON public.aiwork_daily
     FOR ALL TO authenticated
     USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());

@@ -16,6 +16,7 @@ import secrets
 import sqlite3
 import ssl
 import time
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
@@ -216,6 +217,27 @@ def api_get(path, jwt):
             f"{err.read().decode(errors='replace')[:400]}")
 
 
+def api_delete(path, jwt):
+    """DELETE via PostgREST. RLS (`user_id = auth.uid()`) scopes every delete to
+    the caller's own rows, so a filter can never reach another account."""
+    req = urllib.request.Request(
+        f"{os.environ['SUPABASE_URL']}/rest/v1/{path}", method="DELETE",
+        headers={"apikey": os.environ["SUPABASE_ANON_KEY"],
+                 "Authorization": f"Bearer {jwt}",
+                 "Prefer": "count=exact"})
+    try:
+        with urllib.request.urlopen(req, context=SSL_CTX) as resp:
+            # content-range is "*/N" for a counted delete.
+            rng = resp.headers.get("content-range", "*/0")
+            return int(rng.split("/")[-1] or 0)
+    except urllib.error.HTTPError as err:
+        raise SystemExit(
+            f"sweep of {path.split('?')[0]} failed: HTTP {err.code} "
+            f"{err.read().decode(errors='replace')[:400]}\n"
+            "If this is a 403, the schema predates the sweep: apply\n"
+            "  GRANT DELETE ON public.aiwork_daily TO authenticated;")
+
+
 def api(path, payload, jwt):
     req = urllib.request.Request(
         f"{os.environ['SUPABASE_URL']}/rest/v1/{path}",
@@ -318,17 +340,22 @@ def sync_place_labels(db, salt, jwt, uid):
     return len(payload), pulled
 
 
-def push(db, agg, salt):
+def push(db, agg, salt, since_day=None):
     if not os.environ.get("SUPABASE_URL"):
         raise SystemExit("SUPABASE_URL not set (or run with AIWORK_LOCAL_ONLY=1)")
     jwt, uid = authenticate()
+    # Stamped by us, not by the server's `now()` default, so the sweep below
+    # compares timestamps from one clock. Every row this run writes carries
+    # exactly this value; anything older in the window is a row this run did
+    # not produce.
+    run_at = datetime.now(timezone.utc).isoformat()
     payload = [
         {"user_id": uid, "day": day, "hour": hour,
          "place_hash": place_hash(pkey, salt) if pkey else None,
          "source": source, "model": model, "requests": a[0],
          "input_tokens": a[1], "output_tokens": a[2],
          "cache_read_tokens": a[3], "cache_creation_tokens": a[4],
-         "active_minutes": len(a[5])}
+         "active_minutes": len(a[5]), "uploaded_at": run_at}
         for (day, hour, _place, pkey, source, model), a in sorted(agg.items())
     ]
     # Hourly buckets multiply the row count, so upload in chunks rather than
@@ -337,9 +364,30 @@ def push(db, agg, salt):
     status = None
     for start in range(0, len(payload), UPLOAD_CHUNK):
         status = api(path, payload[start:start + UPLOAD_CHUNK], jwt)
+
+    # Sweep: a request's place attribution is not fixed forever. Re-keying a
+    # place, hysteresis settling, or a nearer location sample landing inside
+    # the 30-minute window all move a request from one place_hash to another.
+    # Upsert alone writes the new row and leaves the old one behind, so the
+    # server's total drifts above the machine's and the place list stops
+    # summing to it. Deleting what this run did not write makes the push
+    # authoritative for its window instead of merely additive.
+    #
+    # Upsert first, then delete, so there is never an instant where a bucket
+    # is missing from the server. A crash in between leaves stale rows, which
+    # is exactly the state before this ran and is corrected by the next run.
+    swept = 0
+    if payload:
+        stale = f"aiwork_daily?uploaded_at=lt.{urllib.parse.quote(run_at)}"
+        if since_day:                      # windowed run: only its own days
+            stale += f"&day=gte.{since_day}"
+        swept = api_delete(stale, jwt)
+
     places, pulled = sync_place_labels(db, salt, jwt, uid)
     print(f"pushed {len(payload)} hourly rows (HTTP {status}), "
-          f"{places} places" + (f", {pulled} renamed on the web" if pulled else ""))
+          f"{places} places"
+          + (f", swept {swept} stale rows" if swept else "")
+          + (f", {pulled} renamed on the web" if pulled else ""))
 
 
 def main():
@@ -348,11 +396,18 @@ def main():
                     help="only roll up and upload requests this recent "
                          "(default: the whole history)")
     args = ap.parse_args()
-    # Floor to the UTC hour. A bucket is rebuilt from scratch and upserted, so
-    # a boundary falling mid-hour would replace that hour's complete row with
-    # only the part of it inside the window — silently dropping tokens.
-    since = (int(time.time() - args.since_hours * 3600) // 3600 * 3600
+    # Floor to the start of the UTC *day*, not the hour. A bucket is rebuilt
+    # from scratch and upserted, so a boundary falling mid-hour would replace
+    # that hour's complete row with only the part of it inside the window —
+    # silently dropping tokens. The day boundary is the stricter version of the
+    # same rule, and it is what the sweep in push() needs: the sweep deletes by
+    # day, so every bucket in every day it can reach has to be re-pushed, or it
+    # would delete buckets this run never rebuilt. Costs at most 24 extra
+    # hours of re-aggregation, which is local work.
+    since = (int(time.time() - args.since_hours * 3600) // 86400 * 86400
              if args.since_hours else None)
+    since_day = (datetime.fromtimestamp(since, timezone.utc).strftime("%Y-%m-%d")
+                 if since else None)
 
     db = sqlite3.connect(DB)
     rows = joined_rows(db, since)
@@ -364,7 +419,7 @@ def main():
     if LOCAL_ONLY:
         print(f"local-only: report written to {write_csv(agg)}")
     else:
-        push(db, agg, get_salt())
+        push(db, agg, get_salt(), since_day)
 
 
 if __name__ == "__main__":
