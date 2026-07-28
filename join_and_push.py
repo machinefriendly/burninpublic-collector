@@ -93,12 +93,27 @@ _JOIN_SELECT = """
              ORDER BY s.ts DESC LIMIT 1) AS place_key
     FROM usage_requests u
 """
-JOIN_ALL = _JOIN_SELECT + " ORDER BY u.ts"
-JOIN_SINCE = _JOIN_SELECT + " WHERE u.ts >= ? ORDER BY u.ts"
+# Usage from before the collector existed can never be attributed to a place,
+# so it is not uploaded at all. Otherwise the headline total counts months of
+# history while the place list only covers the days since install, and the two
+# cannot be reconciled by anyone looking at them. Literal statements, never
+# f-strings — the security scanner rejects interpolated SQL (CWE-89).
+_TRACKED = " WHERE u.ts >= (SELECT MIN(ts) FROM location_samples)"
+JOIN_ALL = _JOIN_SELECT + _TRACKED + " ORDER BY u.ts"
+JOIN_SINCE = _JOIN_SELECT + _TRACKED + " AND u.ts >= ? ORDER BY u.ts"
 
 
 def joined_rows(db, since_ts=None):
-    """Per request: as-of join to the latest location sample <= ts.
+    """Per request since tracking began: as-of join to the latest sample <= ts.
+
+    Requests inside the tracking window that still find no sample (machine
+    asleep, sampler missed a beat) keep a NULL place and ARE uploaded. Dropping
+    them would under-report real usage and hide a collector fault; the
+    dashboard shows them as an explicit unmapped row so the places still sum to
+    the headline.
+
+    With no samples yet, MIN(ts) is NULL and the comparison yields no rows —
+    correct: nothing can be attributed to a place until sampling has started.
 
     `since_ts` limits the pass to recent requests. Hour buckets are disjoint, so
     a windowed run re-computes whole buckets and the upsert replaces them —

@@ -30,8 +30,9 @@ against the code (`join_and_push.py` is the only file that uploads).
 | Project names, file paths | — |
 | Your prompts and code — **never even read**; only token *counts* are parsed from the logs | — |
 | Continuous location samples, and every exact GPS fix | Which **~250 m cell** each detected place sits in, plus its neighbourhood name. Places **you named** upload their exact coordinates instead — naming is consent |
+| Your Claude Code / Codex history from *before* you installed the collector — parsed locally for your own reports, never uploaded | — |
 
-Three details worth knowing about that table:
+Four details worth knowing about that table:
 
 - **Why hours, not days.** Buckets are UTC hours so your dashboard can show
   days in *your* timezone — a day-level total can't be re-cut across another
@@ -43,6 +44,13 @@ Three details worth knowing about that table:
   and a place you haven't named yet would be invisible. What that costs you is
   bounded and stated: which 250 m cell, never where in it. Naming a place then
   upgrades it to its exact fix, because at that point you have chosen to.
+- **Why history stops at install time.** The log files go back months, but there
+  were no location samples then, so none of it can be attributed to a place.
+  Uploading it anyway would put a headline total on your dashboard that the
+  place list underneath could never add up to. So the upload starts at your
+  first location sample, and everything on the dashboard reconciles: places plus
+  unmapped equals the total. Your full history is still in `~/.aiwork/local.db`
+  and still shows up in local reports.
 - **Want the stricter rule?** `AIWORK_HIDE_UNNAMED=1` keeps unnamed places off
   the server entirely — a place then only exists remotely once you name it with
   `places.py`. Nothing else changes.
