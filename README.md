@@ -74,9 +74,12 @@ git clone https://github.com/machinefriendly/burninpublic-collector.git
 cd burninpublic-collector && ./install.sh
 ```
 
-The installer copies the scripts to `~/.aiwork/bin` and loads two launchd
-agents: a 5-minute place sampler, a 15-minute incremental sync, and the
-nightly 03:15 full sync. No root, no sudo, everything under your own user.
+The installer copies the scripts to `~/.aiwork/bin`, loads the launchd
+agents (a 5-minute place sampler, a 15-minute incremental sync, and the
+nightly 03:15 full sync), then prompts you to sign in — same one-time
+email code the web app uses. No root, no sudo, everything under your own
+user. Skip the sign-in with Ctrl-C and run it later with
+`python3 ~/.aiwork/bin/login.py`.
 
 ## Permissions it will ask for — and why
 
@@ -94,6 +97,8 @@ nightly 03:15 full sync. No root, no sudo, everything under your own user.
 
 ## Connect your account
 
+The installer does this at the end. To redo it (or if you skipped it):
+
 ```bash
 python3 ~/.aiwork/bin/login.py     # enter email → one-time code from your inbox
 ```
@@ -105,6 +110,10 @@ token in `~/.aiwork/session.json` (mode 600) — no admin keys ever touch
 your machine, and uploads run as *you* under row-level security.
 
 ## Name your places
+
+Easiest on [the dashboard](https://burninpublic.com): click a place's name
+in the list and type — the collector picks the label up on its next sync.
+The same works from the terminal:
 
 ```bash
 python3 ~/.aiwork/bin/places.py                          # list detected places

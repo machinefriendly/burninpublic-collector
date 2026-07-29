@@ -56,9 +56,23 @@ echo
 echo "installed to $BIN — agents loaded:"
 launchctl list | grep aiwork || true
 echo
-echo "next steps:"
-echo "  1. create an account at https://burninpublic.com"
-echo "  2. python3 $BIN/login.py            # connect this machine"
-echo "  3. python3 $BIN/places.py           # name your places when they appear"
+
+# Sign this machine in right away. The dashboard stays empty until the first
+# authenticated upload, and "come back to the terminal later" loses people.
+# Under `curl | bash` stdin belongs to the pipe, so the prompts read from the
+# real terminal instead.
+if [ -s "$HOME/.aiwork/session.json" ]; then
+    echo "already signed in — uploads continue under the existing account"
+elif [ -r /dev/tty ]; then
+    echo "connect this Mac to your burninpublic.com account (Ctrl-C to skip):"
+    python3 "$BIN/login.py" </dev/tty \
+        || echo "sign-in skipped — run it any time: python3 $BIN/login.py"
+else
+    echo "no terminal available — sign in with: python3 $BIN/login.py"
+fi
+
+echo
+echo "that's it. your numbers appear at https://burninpublic.com within"
+echo "~15 minutes of coding; name your places right on the map there."
 echo "preview locally without uploading:"
 echo "  AIWORK_LOCAL_ONLY=1 python3 $BIN/join_and_push.py"
