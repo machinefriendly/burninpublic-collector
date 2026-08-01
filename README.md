@@ -32,11 +32,14 @@ against the code (`join_and_push.py` is the only file that uploads).
 | Continuous location samples, and every exact GPS fix | Which **~250 m cell** each detected place sits in, plus its neighbourhood name. Places **you named** upload their exact coordinates instead — naming is consent |
 | Your Claude Code / Codex history from *before* you installed the collector — parsed locally for your own reports, never uploaded | — |
 
-One third-party service is involved: when you run `locate_places.py`, the
-exact fix is sent to OpenStreetMap's Nominatim to look up the place *name* —
-that is what reverse geocoding is. The stored short name is capped at
-neighbourhood resolution (street-level detail stays in a local-only column),
-and Nominatim never sees your account, usage, or place fingerprints.
+One third-party service is involved: OpenStreetMap's Nominatim, which turns
+coordinates into a place *name* (reverse geocoding). This happens
+**automatically, once per newly detected place** — that is how a place can
+appear on your map with a neighbourhood name before you have named it. What
+Nominatim receives is the **centre of the ~250 m cell**, never the exact fix
+(which stays in the local database), and never your account, usage, or place
+fingerprints. The stored short name is capped at neighbourhood resolution;
+street-level detail stays in a local-only column.
 
 Four details worth knowing about that table:
 

@@ -76,6 +76,9 @@ def core_location_fix(timeout_s=25):
             pass
         subprocess.run(["open", "-W", APP], timeout=timeout_s + 20)
         if os.path.exists(FIX_FILE):
+            # The .app sets 0600 itself, but enforce it here too so a stale
+            # app binary from an older install can't leave the fix at 0644.
+            os.chmod(FIX_FILE, 0o600)
             with open(FIX_FILE) as fh:
                 lat, lon, acc = fh.read().split()
             return float(lat), float(lon), float(acc)
@@ -158,7 +161,15 @@ def main():
         return
 
     lat, lon, acc = core_location_fix()
-    geo_name, geo_full = reverse_geocode(lat, lon)
+    # Nominatim only ever sees the ~250 m cell centre, never the exact fix —
+    # this runs automatically for newly detected routers (collect_place.sh),
+    # i.e. before any naming consent, so the coarse grid is the ceiling on
+    # what any third party learns. The exact fix stays in the local DB, where
+    # it upgrades the uploaded coordinates only once you name the place.
+    # (Imported here, not at the top: place_key imports from this module.)
+    from place_key import cell_centre, grid_cell
+    clat, clon = cell_centre(grid_cell(lat, lon))
+    geo_name, geo_full = reverse_geocode(clat, clon)
     db.execute("UPDATE places SET lat=?, lon=?, accuracy_m=?, geo_name=?, "
                "geo_full=? WHERE mac=?", (lat, lon, acc, geo_name, geo_full, mac))
     db.commit()

@@ -28,6 +28,10 @@ final class Locator: NSObject, CLLocationManagerDelegate {
         let out = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".aiwork/last_fix.txt")
         try? (line + "\n").write(to: out, atomically: true, encoding: .utf8)
+        // 0600: this file is an exact GPS fix; the default 0644 would let any
+        // other local account read where this Mac's user is.
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o600], ofItemAtPath: out.path)
         exit(0)
     }
 
