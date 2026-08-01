@@ -81,7 +81,7 @@ def main():
     email = sys.argv[1] if len(sys.argv) > 1 else input("email: ")
     post(f"{url}/auth/v1/otp",
          {"email": email, "create_user": True}, anon)
-    print(f"sent a one-time code to {email} — check your inbox")
+    print(f"sent a one-time code to {email} — check your inbox (and spam)")
     code = input("code: ").strip()
     data = post(f"{url}/auth/v1/verify",
                 {"type": "email", "email": email, "token": code}, anon)
