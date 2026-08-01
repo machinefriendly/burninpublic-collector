@@ -7,7 +7,7 @@
 #   Or from a clone:  ./install.sh
 #
 # Copies scripts to ~/.aiwork/bin (outside macOS TCC-protected folders so
-# launchd may run them) and loads the two background agents.
+# launchd may run them) and loads the three background agents.
 set -euo pipefail
 
 REPO="https://github.com/machinefriendly/burninpublic-collector"

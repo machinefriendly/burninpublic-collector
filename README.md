@@ -65,6 +65,10 @@ Four details worth knowing about that table:
   Unmapped row instead of being keyed by a place hash (totals stay correct).
   The next push also removes any unnamed-place metadata uploaded before the
   flag was set. A place then only exists remotely once you name it.
+  **To make it stick, add the line `AIWORK_HIDE_UNNAMED=1` to
+  `~/.aiwork/supabase.env`** — the background agents read that file on every
+  run. Setting the variable on a one-off terminal command affects only that
+  command, not the scheduled uploads.
 
 Every uploaded row is bound to your user id and protected by Postgres
 row-level security: no anonymous access, and no account can query another
@@ -99,16 +103,19 @@ user. Skip the sign-in with Ctrl-C and run it later with
 ## Permissions it will ask for — and why
 
 - **Location Services** (one macOS prompt, *optional*): the bundled
-  `AiworkLocate.app` resolves your named places to map coordinates, once
-  per place. Deny it and everything else still works — your dashboard
-  simply shows places without a real map position.
+  `AiworkLocate.app` takes one fix per newly detected place — automatically,
+  so places can appear on your map before you name them (at ~250 m grid
+  accuracy; see the privacy table). Deny it and everything else still
+  works — your dashboard simply shows places without a real map position.
 - **Background agents** (launchd): the 5-minute sampler, the 15-minute
   incremental sync, and the nightly full sync.
   Visible via `launchctl list | grep aiwork`; uninstall removes them.
 - **Read access to local usage logs**: `~/.claude/projects/**/*.jsonl`
   and `~/.codex/sessions/` — read-only, parsed locally for token counts.
-- Nothing else: no root, no Full Disk Access, no browser access, no
-  network traffic except the aggregate uploads to your own account.
+- Nothing else: no root, no Full Disk Access, no browser access. Network
+  traffic is exactly: the aggregate uploads + sign-in/refresh to your own
+  account, the coarse (~250 m) name lookup to OpenStreetMap's Nominatim,
+  and the install-time downloads from GitHub.
 
 ## Connect your account
 
@@ -147,6 +154,10 @@ Writes the full joined report to `reports/token_location_report.csv`
 instead of uploading — inspect exactly what *would* be sent, or just use
 the collector as a fully offline tracker.
 
+To stay offline permanently, add `AIWORK_LOCAL_ONLY=1` to
+`~/.aiwork/supabase.env` — the scheduled agents read that file, so the
+flag then applies to every run, not just commands you type it in front of.
+
 ## Self-hosting
 
 Don't want to use the hosted backend? Create your own
@@ -179,7 +190,7 @@ rm -rf ~/.aiwork        # includes the local database — export first if you ca
 | `locate_places.py` | Resolves named places to coordinates (CoreLocation + OpenStreetMap). |
 | `local_schema.sql` | Local SQLite schema (`~/.aiwork/local.db`). |
 | `supabase_schema.sql` | Server schema snapshot, for auditing RLS or self-hosting. |
-| `install.sh` / `launchd/` | Installer + the two launchd agents. |
+| `install.sh` / `launchd/` | Installer + the three launchd agents. |
 
 MIT licensed. Historical note: requests recorded before your first location
 sample join to `unknown` — the as-of join only matches samples up to 30
