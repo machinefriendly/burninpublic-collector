@@ -121,7 +121,13 @@ def core_location_fix(timeout_s=25):
 
 
 def reverse_geocode(lat, lon):
-    """Nominatim usage policy: 1 req/s max, identify with a User-Agent."""
+    """Nominatim usage policy: 1 req/s max, identify with a User-Agent.
+
+    `geo_name` (the short name) is capped at neighbourhood resolution on
+    purpose: it is uploaded even for places you never named, where the
+    coordinates are coarsened to a ~250 m cell — a street or building name
+    would leak back the precision the grid removed. Road-level detail lives
+    only in `geo_full`, which never leaves the machine."""
     url = f"{NOMINATIM}?lat={lat}&lon={lon}&format=jsonv2&zoom=16"
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(req, context=SSL_CTX, timeout=15) as resp:
@@ -130,10 +136,11 @@ def reverse_geocode(lat, lon):
     short = ", ".join(
         p for p in (
             addr.get("neighbourhood") or addr.get("suburb")
-            or addr.get("road") or addr.get("village"),
+            or addr.get("village"),
             addr.get("city") or addr.get("town") or addr.get("municipality"),
         ) if p)
-    return short or data.get("name", ""), data.get("display_name", "")
+    return (short or addr.get("city") or addr.get("town")
+            or addr.get("state") or ""), data.get("display_name", "")
 
 
 def main():
