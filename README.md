@@ -28,8 +28,8 @@ against the code (`join_and_push.py` is the only file that uploads).
 | Raw gateway MAC addresses (the place fingerprint) | A salted hash of each fingerprint — irreversible without the salt file that never leaves `~/.aiwork/salt` |
 | Per-request usage rows and timestamps | Hourly totals: tokens by UTC hour × place × source × model, plus active minutes |
 | Project names, file paths | — |
-| Your prompts and code — **never even read**; only token *counts* are parsed from the logs | — |
-| Continuous location samples, and every exact GPS fix | Which **~250 m cell** each detected place sits in, plus its neighbourhood name. Places **you named** upload their exact coordinates instead — naming is consent |
+| Your prompts and code — the parser decodes each log line in memory only to pull out the token-count fields; **nothing of their content is stored or uploaded** | — |
+| Continuous location samples, and exact GPS fixes for every place **you have not named** | Which **~250 m cell** each detected place sits in, plus its neighbourhood name. Places **you named** upload their exact coordinates instead — naming is consent |
 | Your Claude Code / Codex history from *before* you installed the collector — parsed locally for your own reports, never uploaded | — |
 
 One third-party service is involved: OpenStreetMap's Nominatim, which turns
@@ -61,8 +61,10 @@ Four details worth knowing about that table:
   unmapped equals the total. Your full history is still in `~/.aiwork/local.db`
   and still shows up in local reports.
 - **Want the stricter rule?** `AIWORK_HIDE_UNNAMED=1` keeps unnamed places off
-  the server entirely — a place then only exists remotely once you name it with
-  `places.py`. Nothing else changes.
+  the server entirely: no metadata, and their hourly usage folds into the
+  Unmapped row instead of being keyed by a place hash (totals stay correct).
+  The next push also removes any unnamed-place metadata uploaded before the
+  flag was set. A place then only exists remotely once you name it.
 
 Every uploaded row is bound to your user id and protected by Postgres
 row-level security: no anonymous access, and no account can query another
@@ -75,6 +77,10 @@ exact policies. Don't want anything uploaded at all? Use
 ```bash
 curl -fsSL https://raw.githubusercontent.com/machinefriendly/burninpublic-collector/main/install.sh | bash
 ```
+
+Note the one-liner runs whatever is on `main` *right now* — it is not pinned
+to a reviewed release. If that matters to you, clone, review, and run
+`./install.sh` from the checkout instead.
 
 Prefer to read everything first? Same result:
 

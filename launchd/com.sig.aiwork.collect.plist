@@ -13,8 +13,8 @@
     <key>RunAtLoad</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/tmp/aiwork.collect.log</string>
+    <string>REPLACE_LOG/collect.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/aiwork.collect.log</string>
+    <string>REPLACE_LOG/collect.log</string>
 </dict>
 </plist>

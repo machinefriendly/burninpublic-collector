@@ -13,7 +13,9 @@ import hashlib
 import json
 import os
 import secrets
-import sqlite3
+import sqlite3  # noqa: F401
+
+import dbperm
 import ssl
 import time
 import urllib.parse
@@ -67,14 +69,36 @@ HIDE_UNNAMED = os.environ.get("AIWORK_HIDE_UNNAMED") == "1"
 REPORT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports")
 
 
+def is_named(label):
+    """The one definition of "the user named this place", shared by the
+    rollup, the metadata queries, and the exact-vs-coarse coordinate choice.
+    An empty or whitespace label is NOT a name — `label IS NOT NULL` alone
+    would count one, and every consumer must agree or a place can be hidden
+    in one payload and uploaded in the other."""
+    return bool(label and label.strip())
+
+
 def get_salt():
-    if not os.path.exists(SALT_FILE):
-        os.makedirs(os.path.dirname(SALT_FILE), exist_ok=True)
-        with open(SALT_FILE, "w") as fh:
+    """Create-or-read, never truncate: O_EXCL means two concurrent first runs
+    cannot overwrite each other's salt — losing it would orphan every hash
+    already on the server. The loser of the race reads the winner's file.
+    mode=0o600 at open: the file is born private, no chmod window."""
+    os.makedirs(os.path.dirname(SALT_FILE), exist_ok=True)
+    try:
+        fd = os.open(SALT_FILE, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as fh:
             fh.write(secrets.token_hex(16))
-        os.chmod(SALT_FILE, 0o600)
+    except FileExistsError:
+        pass
     with open(SALT_FILE) as fh:
-        return fh.read().strip()
+        salt = fh.read().strip()
+    if not salt:                 # lost the race mid-write: reread once
+        time.sleep(0.2)
+        with open(SALT_FILE) as fh:
+            salt = fh.read().strip()
+    if not salt:
+        raise SystemExit(f"empty salt file {SALT_FILE} — refusing to hash")
+    return salt
 
 
 def place_hash(place_key, salt):
@@ -132,9 +156,18 @@ def rollup(db, rows):
     can never be re-cut across a timezone boundary — so the dashboard could not
     show days in the viewer's own timezone. Hour buckets are disjoint, so
     summing active_minutes across them stays correct."""
-    labels = dict(db.execute("SELECT mac, COALESCE(label, mac) FROM places"))
+    raw_labels = dict(db.execute("SELECT mac, label FROM places"))
+    labels = {mac: lbl if is_named(lbl) else mac
+              for mac, lbl in raw_labels.items()}
     agg = {}
     for (_rid, ts, source, _proj, model, inp, out, cread, ccre, pkey) in rows:
+        # The strict opt-out has to hold here, in the hourly rows, not only in
+        # the metadata query: uploading usage keyed by an unnamed place's hash
+        # would still let the server watch that place's visiting pattern. So
+        # the pkey itself is dropped and the bucket merges into "unknown" —
+        # totals stay intact, the place does not exist remotely at all.
+        if HIDE_UNNAMED and pkey and not is_named(raw_labels.get(pkey)):
+            pkey = None
         utc = datetime.fromtimestamp(ts, timezone.utc)
         place = labels.get(pkey, pkey) if pkey else "unknown"
         key = (utc.strftime("%Y-%m-%d"), utc.hour, place, pkey or "",
@@ -162,6 +195,18 @@ def write_csv(agg):
             w.writerow([day, hour, place, source, model, a[0], a[1], a[2],
                         a[3], a[4], a[1] + a[2] + a[3] + a[4], len(a[5])])
     return path
+
+
+def write_session(session):
+    """Atomic replace via a 0600 temp file: the session is born private (no
+    chmod window), and a crash mid-write leaves the previous session intact
+    instead of a truncated file that strands the machine's auth. The refresh
+    token rotates on every use, so a corrupted write here is unrecoverable."""
+    tmp = SESSION_FILE + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        json.dump(session, fh)
+    os.replace(tmp, SESSION_FILE)
 
 
 def authenticate():
@@ -197,9 +242,7 @@ def authenticate():
         "access_token": data["access_token"],
         "access_expires": time.time() + data.get("expires_in", 3600),
     })
-    with open(SESSION_FILE, "w") as fh:
-        json.dump(session, fh)
-    os.chmod(SESSION_FILE, 0o600)
+    write_session(session)
     return data["access_token"], data["user"]["id"]
 
 
@@ -264,9 +307,9 @@ PLACE_QUERIES = {
     (True, False): "SELECT mac, label, kind, lat, lon, geo_name FROM places "
                    "WHERE label IS NOT NULL OR lat IS NOT NULL",
     (True, True): "SELECT mac, label, kind, lat, lon, geo_name FROM places "
-                  "WHERE label IS NOT NULL",
+                  "WHERE label IS NOT NULL AND TRIM(label) <> ''",
     (False, True): "SELECT mac, label, kind FROM places "
-                   "WHERE label IS NOT NULL",
+                   "WHERE label IS NOT NULL AND TRIM(label) <> ''",
     (False, False): "SELECT mac, label, kind FROM places "
                     "WHERE label IS NOT NULL",
 }
@@ -330,13 +373,29 @@ def sync_place_labels(db, salt, jwt, uid):
         entry = {"user_id": uid, "place_hash": phash, "label": label,
                  "kind": kind}
         if geo and row[3] is not None:
-            lat, lon = (row[3], row[4]) if label else coarse(row[3], row[4])
+            lat, lon = ((row[3], row[4]) if is_named(label)
+                        else coarse(row[3], row[4]))
             entry.update({"lat": lat, "lon": lon, "geo_name": row[5]})
         payload.append(entry)
 
     db.commit()
     if payload:
         api("aiwork_places?on_conflict=user_id,place_hash", payload, jwt)
+
+    # Strict mode also has to undo the past: metadata for places that were
+    # uploaded before the flag was set (or before they lost their name) must
+    # come OFF the server, or "off the server entirely" is only true for
+    # places detected after the flag. Scoped to hashes this machine knows —
+    # never a blanket not-in-payload delete, which would eat another
+    # machine's places on a shared account.
+    if HIDE_UNNAMED:
+        hidden = [place_hash(mac, salt) for (mac, lbl) in
+                  db.execute("SELECT mac, label FROM places")
+                  if not is_named(lbl)]
+        for start in range(0, len(hidden), 100):
+            chunk = ",".join(hidden[start:start + 100])
+            api_delete(f"aiwork_places?place_hash=in.({chunk})", jwt)
+
     return len(payload), pulled
 
 
@@ -409,7 +468,7 @@ def main():
     since_day = (datetime.fromtimestamp(since, timezone.utc).strftime("%Y-%m-%d")
                  if since else None)
 
-    db = sqlite3.connect(DB)
+    db = dbperm.connect(DB)
     rows = joined_rows(db, since)
     matched = sum(1 for r in rows if r[9])
     scope = f"last {args.since_hours:g}h" if since else "all history"

@@ -62,10 +62,14 @@ def post(url, payload, anon):
 
 
 def save_session(data):
-    with open(SESSION_FILE, "w") as fh:
+    """Atomic replace via a 0600 temp file: born private (no chmod window),
+    and a crash mid-write can't leave a truncated session behind."""
+    tmp = SESSION_FILE + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
         json.dump({"user_id": data["user"]["id"],
                    "refresh_token": data["refresh_token"]}, fh)
-    os.chmod(SESSION_FILE, 0o600)
+    os.replace(tmp, SESSION_FILE)
     print(f"logged in as {data['user']['email']} ({data['user']['id']})")
 
 

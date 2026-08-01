@@ -6,8 +6,10 @@ permission prompt on first run). The place name comes from Nominatim
 (OpenStreetMap reverse geocoding) — both free, no API keys.
 """
 import json
+
+import dbperm
 import os
-import sqlite3
+import sqlite3  # noqa: F401  (types only; connections go through dbperm)
 import ssl
 import subprocess
 import sys
@@ -148,7 +150,7 @@ def reverse_geocode(lat, lon):
 
 def main():
     force = "--force" in sys.argv
-    db = sqlite3.connect(DB)
+    db = dbperm.connect(DB)
     ensure_columns(db)
     mac = current_gateway_mac()
     if not mac:

@@ -24,10 +24,16 @@ if [ ! -f "$SRC/collect_place.sh" ]; then
     SRC="$TMP/burninpublic-collector-main"
 fi
 
-mkdir -p "$BIN" "$AGENTS"
+LOG="$HOME/.aiwork/log"
+# The log dir must exist BEFORE launchctl load — launchd does not create
+# missing parents, it just fails to open the path. 700 on ~/.aiwork keeps the
+# DB, salt, session, and logs unreadable to other local accounts.
+mkdir -p "$BIN" "$AGENTS" "$LOG"
+chmod 700 "$HOME/.aiwork" "$LOG"
+rm -f /tmp/aiwork.collect.log /tmp/aiwork.freshen.log /tmp/aiwork.sync.log
 cp "$SRC"/collect_place.sh "$SRC"/parse_usage.py "$SRC"/join_and_push.py \
    "$SRC"/places.py "$SRC"/locate_places.py "$SRC"/place_key.py \
-   "$SRC"/login.py "$SRC"/local_schema.sql "$BIN/"
+   "$SRC"/login.py "$SRC"/dbperm.py "$SRC"/local_schema.sql "$BIN/"
 chmod +x "$BIN/collect_place.sh"
 
 # Location helper as an .app bundle — the only form macOS reliably shows a
@@ -47,7 +53,8 @@ fi
 
 for name in collect freshen sync; do
     plist="$AGENTS/com.sig.aiwork.$name.plist"
-    sed "s|REPLACE_ME|$BIN|g" "$SRC/launchd/com.sig.aiwork.$name.plist" > "$plist"
+    sed -e "s|REPLACE_ME|$BIN|g" -e "s|REPLACE_LOG|$LOG|g" \
+        "$SRC/launchd/com.sig.aiwork.$name.plist" > "$plist"
     launchctl unload "$plist" 2>/dev/null || true
     launchctl load "$plist"
 done

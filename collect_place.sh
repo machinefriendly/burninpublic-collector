@@ -4,6 +4,9 @@
 # gateway is portable (phone hotspot, VPN with no next-hop MAC) that assumption
 # fails and place_key.py resolves a coarse CoreLocation grid cell instead.
 set -euo pipefail
+# The DB (and sqlite's -wal/-shm side files) hold raw place keys and SSIDs —
+# born 0600, not chmod'd after the fact.
+umask 077
 
 DB="${AIWORK_DB:-$HOME/.aiwork/local.db}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -73,7 +76,9 @@ INSERT INTO places (mac, first_seen, last_seen) VALUES ('$Q_KEY', $NOW, $NOW)
     ON CONFLICT(mac) DO UPDATE SET last_seen = $NOW;
 SQL
 
-echo "sampled: $PLACE_KEY (${SSID:-no ssid}) at $(date -r "$NOW" '+%F %T')"
+# Deliberately no place key, MAC, or SSID here: this line lands in the launchd
+# log, and a log is the easiest thing on the machine to leak accidentally.
+echo "sampled a place at $(date -r "$NOW" '+%F %T')"
 
 # One-time geolocation for a place we haven't located yet (best-effort:
 # silently skipped when Location Services permission is missing). Grid places

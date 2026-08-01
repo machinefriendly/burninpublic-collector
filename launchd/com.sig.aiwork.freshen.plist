@@ -19,8 +19,8 @@
     <key>StartInterval</key>
     <integer>900</integer>
     <key>StandardOutPath</key>
-    <string>/tmp/aiwork.freshen.log</string>
+    <string>REPLACE_LOG/freshen.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/aiwork.freshen.log</string>
+    <string>REPLACE_LOG/freshen.log</string>
 </dict>
 </plist>

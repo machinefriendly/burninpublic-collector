@@ -6,7 +6,9 @@ Incremental (byte offsets in parse_state) + dedups by requestId.
 import glob
 import json
 import os
-import sqlite3
+import sqlite3  # noqa: F401
+
+import dbperm
 from datetime import datetime, timezone
 
 DB = os.environ.get("AIWORK_DB", os.path.expanduser("~/.aiwork/local.db"))
@@ -106,7 +108,7 @@ def scan(db, pattern, extract):
 
 def main():
     os.makedirs(os.path.dirname(DB), exist_ok=True)
-    db = sqlite3.connect(DB)
+    db = dbperm.connect(DB)
     with open(SCHEMA) as fh:
         db.executescript(fh.read())
 

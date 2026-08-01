@@ -15,7 +15,9 @@ fix, so even a place you later name and sync stays coarse.
 import argparse
 import math
 import os
-import sqlite3
+import sqlite3  # noqa: F401
+
+import dbperm
 import time
 
 from locate_places import core_location_fix, ensure_columns, reverse_geocode
@@ -162,7 +164,7 @@ def main():
                     help="take a fresh fix even if the cached one is fresh")
     args = ap.parse_args()
 
-    db = sqlite3.connect(DB)
+    db = dbperm.connect(DB)
     key, cell = resolve(db, f"{args.gateway_mac}|{args.ssid}", args.force)
     describe_cell(db, key, cell)
     print(key)

@@ -11,7 +11,9 @@ Naming a place is also what allows it to be uploaded at all: unnamed places
 stay entirely local.
 """
 import os
-import sqlite3
+import sqlite3  # noqa: F401
+
+import dbperm
 import sys
 from datetime import datetime
 
@@ -23,7 +25,7 @@ def fmt(ts):
 
 
 def main():
-    db = sqlite3.connect(DB)
+    db = dbperm.connect(DB)
     if len(sys.argv) >= 3:
         key = sys.argv[1].lower()
         label = sys.argv[2]

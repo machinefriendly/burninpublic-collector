@@ -25,13 +25,29 @@ final class Locator: NSObject, CLLocationManagerDelegate {
         print(line)
         // Also drop the fix to a file: when launched as an .app via `open`,
         // stdout is not connected to the caller.
-        let out = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".aiwork/last_fix.txt")
-        try? (line + "\n").write(to: out, atomically: true, encoding: .utf8)
-        // 0600: this file is an exact GPS fix; the default 0644 would let any
-        // other local account read where this Mac's user is.
-        try? FileManager.default.setAttributes(
-            [.posixPermissions: 0o600], ofItemAtPath: out.path)
+        // This file is an exact GPS fix. It must never exist world-readable,
+        // even briefly: create the temp WITH 0600 in the same call, then
+        // rename into place. If any step fails, leave no fix behind at all —
+        // the caller then errors loudly instead of reading a stale/exposed
+        // file.
+        let fm = FileManager.default
+        let dir = fm.homeDirectoryForCurrentUser.appendingPathComponent(".aiwork")
+        let out = dir.appendingPathComponent("last_fix.txt")
+        let tmp = dir.appendingPathComponent("last_fix.txt.tmp")
+        let ok = fm.createFile(atPath: tmp.path,
+                               contents: Data((line + "\n").utf8),
+                               attributes: [.posixPermissions: 0o600])
+        do {
+            if !ok { throw CocoaError(.fileWriteUnknown) }
+            try? fm.removeItem(at: out)
+            try fm.moveItem(at: tmp, to: out)
+        } catch {
+            try? fm.removeItem(at: tmp)
+            try? fm.removeItem(at: out)
+            FileHandle.standardError.write(
+                Data("error: could not write fix privately\n".utf8))
+            exit(1)
+        }
         exit(0)
     }
 
