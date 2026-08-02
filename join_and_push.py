@@ -70,6 +70,14 @@ HIDE_UNNAMED = os.environ.get("AIWORK_HIDE_UNNAMED") == "1"
 REPORT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports")
 
 
+def is_transit(label):
+    """"In transit" is a reserved label for places that are really a moving
+    Mac — hotspot stops along a commute. It groups them on the dashboard,
+    but it is NOT location consent: unlike other names it never upgrades a
+    place to exact coordinates (see the coordinate choice below)."""
+    return bool(label) and label.strip().lower() == "in transit"
+
+
 def is_named(label):
     """The one definition of "the user named this place", shared by the
     rollup, the metadata queries, and the exact-vs-coarse coordinate choice.
@@ -388,7 +396,8 @@ def sync_place_labels(db, salt, jwt, uid):
         entry = {"user_id": uid, "place_hash": phash, "label": label,
                  "kind": kind}
         if geo and row[3] is not None:
-            lat, lon = ((row[3], row[4]) if is_named(label)
+            lat, lon = ((row[3], row[4])
+                        if is_named(label) and not is_transit(label)
                         else coarse(row[3], row[4]))
             entry.update({"lat": lat, "lon": lon, "geo_name": row[5]})
         payload.append(entry)

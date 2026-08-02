@@ -162,6 +162,12 @@ python3 ~/.aiwork/bin/places.py aa:bb:cc:dd:ee:ff "wework" work   # name one
 
 Naming a place is what opts it into geolocation + map display.
 
+One label is reserved: **"In transit"** (any capitalisation). Use it for
+stops that are really a moving Mac — hotspot cells along a commute. The
+dashboard groups every place with that label into a single row, and unlike
+other names it is *not* location consent: an In-transit place keeps
+grid-coarse (~250 m) coordinates, exactly like an unnamed one.
+
 ## Local-only mode
 
 ```bash
