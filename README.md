@@ -49,7 +49,10 @@ Five details worth knowing about that table:
   fingerprints — your Wi-Fi router, your phone hotspot's grid cell, an
   adjacent cell from GPS noise. Located fingerprints within ~200 m merge
   into one place before anything uploads (places you named are never merged
-  away — naming is explicit intent).
+  away — naming is explicit intent). A hotspot fingerprint recorded while no
+  location fix was available has no coordinates to merge by; it merges anyway
+  when its entire sample history sits inside one located place's timeline —
+  the machine demonstrably never moved.
 
 - **Why hours, not days.** Buckets are UTC hours so your dashboard can show
   days in *your* timezone — a day-level total can't be re-cut across another
