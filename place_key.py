@@ -142,6 +142,14 @@ def describe_cell(db, key, cell):
     db.commit()
 
 
+# Shared failure-backoff stamp (collect_place.sh uses the same file for the
+# locate_places path). Without it, a machine that cannot get a fix — location
+# permission undecided or denied — retries on every 5-minute sample, and each
+# retry opens AiworkLocate.app: a permission popup every 5 minutes, forever.
+ATTEMPT_FILE = os.path.expanduser("~/.aiwork/.locate_attempt")
+ATTEMPT_BACKOFF_S = 6 * 3600
+
+
 def resolve(db, net_sig, force=False):
     """Current grid place key, taking a fresh fix only when we have to."""
     state = load_state(db)
@@ -150,7 +158,23 @@ def resolve(db, net_sig, force=False):
             and state["net_sig"] == net_sig
             and now - state["ts"] < FIX_TTL):
         return f"geo:{KEY_VERSION}:{state['cell']}", state["cell"]
-    lat, lon, accuracy_m = core_location_fix()
+    if not force:
+        try:
+            if now - os.path.getmtime(ATTEMPT_FILE) < ATTEMPT_BACKOFF_S:
+                raise SystemExit("location fix backoff active — last attempt "
+                                 "failed; retrying later (or run with --force)")
+        except OSError:
+            pass                          # no stamp: attempts are allowed
+    try:
+        lat, lon, accuracy_m = core_location_fix()
+    except (SystemExit, TimeoutError):
+        with open(ATTEMPT_FILE, "a"):
+            os.utime(ATTEMPT_FILE, None)
+        raise
+    try:
+        os.remove(ATTEMPT_FILE)           # success clears the backoff
+    except FileNotFoundError:
+        pass
     cell = settled_cell(state["cell"] if state else None, lat, lon, accuracy_m)
     save_state(db, now, lat, lon, accuracy_m, cell, net_sig)
     return f"geo:{KEY_VERSION}:{cell}", cell
