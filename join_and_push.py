@@ -22,6 +22,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
+from alias_places import refresh_aliases
 from place_key import cell_centre, grid_cell
 
 try:  # macOS python.org builds ship without system CA certs
@@ -156,11 +157,17 @@ def rollup(db, rows):
     can never be re-cut across a timezone boundary — so the dashboard could not
     show days in the viewer's own timezone. Hour buckets are disjoint, so
     summing active_minutes across them stays correct."""
+    # One physical place, one bucket: fingerprints within ~200 m of a
+    # canonical place (the home router vs the hotspot's grid cell) fold into
+    # it here, before hashing — aliases never reach the payload, and the
+    # sweep retires their old rows from the server on the next full push.
+    aliases = refresh_aliases(db)
     raw_labels = dict(db.execute("SELECT mac, label FROM places"))
     labels = {mac: lbl if is_named(lbl) else mac
               for mac, lbl in raw_labels.items()}
     agg = {}
     for (_rid, ts, source, _proj, model, inp, out, cread, ccre, pkey) in rows:
+        pkey = aliases.get(pkey, pkey)
         # The strict opt-out has to hold here, in the hourly rows, not only in
         # the metadata query: uploading usage keyed by an unnamed place's hash
         # would still let the server watch that place's visiting pattern. So
@@ -305,13 +312,16 @@ def api(path, payload, jwt):
 # reviewer or scanner even though every fragment is a constant.
 PLACE_QUERIES = {
     (True, False): "SELECT mac, label, kind, lat, lon, geo_name FROM places "
-                   "WHERE label IS NOT NULL OR lat IS NOT NULL",
+                   "WHERE (label IS NOT NULL OR lat IS NOT NULL) "
+                   "AND alias_of IS NULL",
     (True, True): "SELECT mac, label, kind, lat, lon, geo_name FROM places "
-                  "WHERE label IS NOT NULL AND TRIM(label) <> ''",
+                  "WHERE label IS NOT NULL AND TRIM(label) <> '' "
+                  "AND alias_of IS NULL",
     (False, True): "SELECT mac, label, kind FROM places "
-                   "WHERE label IS NOT NULL AND TRIM(label) <> ''",
+                   "WHERE label IS NOT NULL AND TRIM(label) <> '' "
+                   "AND alias_of IS NULL",
     (False, False): "SELECT mac, label, kind FROM places "
-                    "WHERE label IS NOT NULL",
+                    "WHERE label IS NOT NULL AND alias_of IS NULL",
 }
 
 
@@ -382,19 +392,20 @@ def sync_place_labels(db, salt, jwt, uid):
     if payload:
         api("aiwork_places?on_conflict=user_id,place_hash", payload, jwt)
 
-    # Strict mode also has to undo the past: metadata for places that were
-    # uploaded before the flag was set (or before they lost their name) must
-    # come OFF the server, or "off the server entirely" is only true for
-    # places detected after the flag. Scoped to hashes this machine knows —
-    # never a blanket not-in-payload delete, which would eat another
-    # machine's places on a shared account.
-    if HIDE_UNNAMED:
-        hidden = [place_hash(mac, salt) for (mac, lbl) in
-                  db.execute("SELECT mac, label FROM places")
-                  if not is_named(lbl)]
-        for start in range(0, len(hidden), 100):
-            chunk = ",".join(hidden[start:start + 100])
-            api_delete(f"aiwork_places?place_hash=in.({chunk})", jwt)
+    # Undo the past too, scoped to hashes this machine knows — never a
+    # blanket not-in-payload delete, which would eat another machine's
+    # places on a shared account:
+    #   * aliased places: their metadata was uploaded back when they were
+    #     canonical; the row must come off or the merged place shows twice.
+    #   * strict mode: metadata uploaded before AIWORK_HIDE_UNNAMED was set,
+    #     or "off the server entirely" is only true for places detected
+    #     after the flag.
+    retire = [place_hash(mac, salt) for (mac, lbl, alias) in
+              db.execute("SELECT mac, label, alias_of FROM places")
+              if alias is not None or (HIDE_UNNAMED and not is_named(lbl))]
+    for start in range(0, len(retire), 100):
+        chunk = ",".join(retire[start:start + 100])
+        api_delete(f"aiwork_places?place_hash=in.({chunk})", jwt)
 
     return len(payload), pulled
 

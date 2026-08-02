@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS places (
     label        TEXT,                      -- human name (places.py, or the web)
     label_synced TEXT,                      -- label as the server last knew it
     kind         TEXT,                      -- e.g. home / office / cafe
+    alias_of     TEXT,                      -- merged into this canonical place
+                                           -- (alias_places.py, ~200 m radius)
     first_seen   INTEGER,
     last_seen    INTEGER
 );

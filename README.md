@@ -41,7 +41,13 @@ Nominatim receives is the **centre of the ~250 m cell**, never the exact fix
 fingerprints. The stored short name is capped at neighbourhood resolution;
 street-level detail stays in a local-only column.
 
-Four details worth knowing about that table:
+Five details worth knowing about that table:
+
+- **One physical place is one place.** The same desk can produce several
+  fingerprints — your Wi-Fi router, your phone hotspot's grid cell, an
+  adjacent cell from GPS noise. Located fingerprints within ~200 m merge
+  into one place before anything uploads (places you named are never merged
+  away — naming is explicit intent).
 
 - **Why hours, not days.** Buckets are UTC hours so your dashboard can show
   days in *your* timezone — a day-level total can't be re-cut across another
