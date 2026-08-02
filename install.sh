@@ -38,15 +38,30 @@ chmod +x "$BIN/collect_place.sh"
 
 # Location helper as an .app bundle — the only form macOS reliably shows a
 # location permission prompt for (bare CLI binaries are silently denied).
+#
+# Rebuild ONLY when the source actually changed: the ad-hoc signature is the
+# app's TCC identity, so every rebuild/re-sign is a brand-new app to macOS —
+# the user's earlier "Allow" stops matching and Location Services prompts all
+# over again. An unchanged app must keep its exact bytes.
 if command -v swiftc >/dev/null 2>&1; then
     APP="$BIN/AiworkLocate.app"
-    rm -rf "$APP"
-    mkdir -p "$APP/Contents/MacOS"
-    cp "$SRC/helpers/Info.plist" "$APP/Contents/Info.plist"
-    swiftc "$SRC/helpers/aiwork-locate.swift" \
-        -o "$APP/Contents/MacOS/aiwork-locate" -framework CoreLocation \
-    && codesign -s - -f "$APP" \
-    && echo "built AiworkLocate.app (open it once to grant the location prompt)"
+    STAMP="$APP/Contents/.source-checksum"
+    WANT=$(shasum "$SRC/helpers/aiwork-locate.swift" "$SRC/helpers/Info.plist" \
+           | shasum | cut -d' ' -f1)
+    if [ -x "$APP/Contents/MacOS/aiwork-locate" ] \
+       && [ "$(cat "$STAMP" 2>/dev/null)" = "$WANT" ]; then
+        echo "AiworkLocate.app unchanged — keeping it (preserves the location grant)"
+    else
+        rm -rf "$APP"
+        mkdir -p "$APP/Contents/MacOS"
+        cp "$SRC/helpers/Info.plist" "$APP/Contents/Info.plist"
+        swiftc "$SRC/helpers/aiwork-locate.swift" \
+            -o "$APP/Contents/MacOS/aiwork-locate" -framework CoreLocation \
+        && codesign -s - -f "$APP" \
+        && printf "%s" "$WANT" > "$STAMP" \
+        && /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP" 2>/dev/null || true
+        echo "built AiworkLocate.app (macOS will ask for the location permission once)"
+    fi
 else
     echo "swiftc not found — geolocation helper skipped (usage tracking unaffected)"
 fi

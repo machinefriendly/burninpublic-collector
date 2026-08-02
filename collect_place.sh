@@ -83,7 +83,19 @@ echo "sampled a place at $(date -r "$NOW" '+%F %T')"
 # One-time geolocation for a place we haven't located yet (best-effort:
 # silently skipped when Location Services permission is missing). Grid places
 # are already located by place_key.py, so this only fires for real routers.
+#
+# Failed attempts back off for 6 hours. Without this, a place that cannot be
+# located (permission undecided, no fix indoors) re-opens AiworkLocate.app on
+# every 5-minute sample — which on a machine without a standing grant means a
+# location permission popup every 5 minutes, forever.
+ATTEMPT="$HOME/.aiwork/.locate_attempt"
 HAS_GEO=$(sqlite3 "$DB" "SELECT COUNT(*) FROM pragma_table_info('places') WHERE name='lat'")
 if [ "$HAS_GEO" = "0" ] || [ -z "$(sqlite3 "$DB" "SELECT lat FROM places WHERE mac='$Q_KEY' AND lat IS NOT NULL" 2>/dev/null)" ]; then
-    python3 "$SCRIPT_DIR/locate_places.py" >/dev/null 2>&1 || true
+    LAST=$(stat -f %m "$ATTEMPT" 2>/dev/null || echo 0)
+    if [ $((NOW - LAST)) -ge 21600 ]; then
+        touch "$ATTEMPT"
+        if python3 "$SCRIPT_DIR/locate_places.py" >/dev/null 2>&1; then
+            rm -f "$ATTEMPT"       # success: next new place may locate at once
+        fi
+    fi
 fi
