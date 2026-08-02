@@ -25,7 +25,10 @@ Rules, in order:
 import math
 
 MERGE_RADIUS_M = 200
-SANDWICH_GAP_S = 30 * 60   # neighbour sample must be this close in time
+# Neighbour sample must be this close in time. Sampling is every 5 minutes,
+# so 15 min tolerates two missed beats while keeping the window a round trip
+# to somewhere else would have to fit through as small as the evidence allows.
+SANDWICH_GAP_S = 15 * 60
 
 
 def _dist_m(lat1, lon1, lat2, lon2):

@@ -40,7 +40,8 @@ coordinates into a place *name* (reverse geocoding). This happens
 appear on your map with a neighbourhood name before you have named it. What
 Nominatim receives is the **centre of the ~250 m cell**, never the exact fix
 (which stays in the local database), and never your account, usage, or place
-fingerprints. The stored short name is capped at neighbourhood resolution;
+fingerprints. In [local-only mode](#local-only-mode) this lookup is skipped
+entirely. The stored short name is capped at neighbourhood resolution;
 street-level detail stays in a local-only column.
 
 Five details worth knowing about that table:
@@ -51,8 +52,14 @@ Five details worth knowing about that table:
   into one place before anything uploads (places you named are never merged
   away — naming is explicit intent). A hotspot fingerprint recorded while no
   location fix was available has no coordinates to merge by; it merges anyway
-  when its entire sample history sits inside one located place's timeline —
-  the machine demonstrably never moved.
+  when its entire sample history sits inside one located place's timeline
+  (the nearest samples before and after both belong to that place, each
+  within 15 minutes, with nothing else in between). That is strong evidence,
+  not proof — an excursion that fits entirely inside those gaps would be
+  misattributed. Merged usage counts under the surviving place, which may be
+  one you named (so its exact coordinates apply); under
+  `AIWORK_HIDE_UNNAMED=1` an unnamed fingerprint never rides along — its
+  usage folds into Unmapped regardless of any merge.
 
 - **Why hours, not days.** Buckets are UTC hours so your dashboard can show
   days in *your* timezone — a day-level total can't be re-cut across another
@@ -168,6 +175,9 @@ the collector as a fully offline tracker.
 To stay offline permanently, add `AIWORK_LOCAL_ONLY=1` to
 `~/.aiwork/supabase.env` — the scheduled agents read that file, so the
 flag then applies to every run, not just commands you type it in front of.
+With the flag in that file the Nominatim name lookup is skipped too, so
+nothing leaves the machine at all — newly detected places simply appear
+without a neighbourhood name.
 
 ## Self-hosting
 

@@ -125,6 +125,24 @@ def core_location_fix(timeout_s=25):
         "System Settings > Privacy & Security > Location Services, then rerun")
 
 
+def _local_only():
+    """AIWORK_LOCAL_ONLY=1 means NOTHING leaves the machine — that promise has
+    to cover the Nominatim lookup too, not just the Supabase upload. The env
+    file is read directly because the scheduled agents don't inherit shell
+    exports; a value already in the environment wins."""
+    if os.environ.get("AIWORK_LOCAL_ONLY") is not None:
+        return os.environ["AIWORK_LOCAL_ONLY"] == "1"
+    try:
+        with open(os.path.expanduser("~/.aiwork/supabase.env")) as fh:
+            for line in fh:
+                line = line.strip()
+                if line.startswith("AIWORK_LOCAL_ONLY="):
+                    return line.partition("=")[2].strip() == "1"
+    except OSError:
+        pass
+    return False
+
+
 def reverse_geocode(lat, lon):
     """Nominatim usage policy: 1 req/s max, identify with a User-Agent.
 
@@ -133,6 +151,8 @@ def reverse_geocode(lat, lon):
     coordinates are coarsened to a ~250 m cell — a street or building name
     would leak back the precision the grid removed. Road-level detail lives
     only in `geo_full`, which never leaves the machine."""
+    if _local_only():
+        return "", ""     # place stays unnamed locally; coords still recorded
     url = f"{NOMINATIM}?lat={lat}&lon={lon}&format=jsonv2&zoom=16"
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(req, context=SSL_CTX, timeout=15) as resp:

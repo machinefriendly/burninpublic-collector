@@ -167,14 +167,19 @@ def rollup(db, rows):
               for mac, lbl in raw_labels.items()}
     agg = {}
     for (_rid, ts, source, _proj, model, inp, out, cread, ccre, pkey) in rows:
-        pkey = aliases.get(pkey, pkey)
         # The strict opt-out has to hold here, in the hourly rows, not only in
         # the metadata query: uploading usage keyed by an unnamed place's hash
         # would still let the server watch that place's visiting pattern. So
         # the pkey itself is dropped and the bucket merges into "unknown" —
         # totals stay intact, the place does not exist remotely at all.
+        # Judged on the ORIGINAL fingerprint, before alias resolution: an
+        # unnamed hotspot that merged into a named place is still an unnamed
+        # fingerprint, and strict mode must not let the merge smuggle its
+        # usage under the named place's hash.
         if HIDE_UNNAMED and pkey and not is_named(raw_labels.get(pkey)):
             pkey = None
+        else:
+            pkey = aliases.get(pkey, pkey)
         utc = datetime.fromtimestamp(ts, timezone.utc)
         place = labels.get(pkey, pkey) if pkey else "unknown"
         key = (utc.strftime("%Y-%m-%d"), utc.hour, place, pkey or "",
