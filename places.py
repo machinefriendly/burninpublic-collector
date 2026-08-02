@@ -7,8 +7,10 @@
 
 A place key is either a gateway MAC (a router, bolted to a building) or a
 geo:<version>:<cell> grid cell for portable gateways — see place_key.py.
-Naming a place is also what allows it to be uploaded at all: unnamed places
-stay entirely local.
+Naming a place upgrades what is uploaded for it from a ~250 m grid cell to
+its exact coordinates (the reserved label "In transit" excepted — it stays
+coarse). Unnamed places upload too, at grid resolution, unless
+AIWORK_HIDE_UNNAMED=1 — see the README privacy table.
 """
 import os
 import sqlite3  # noqa: F401

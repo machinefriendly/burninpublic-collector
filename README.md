@@ -133,7 +133,8 @@ user. Skip the sign-in with Ctrl-C and run it later with
 - Nothing else: no root, no Full Disk Access, no browser access. Network
   traffic is exactly: the aggregate uploads + sign-in/refresh to your own
   account, the coarse (~250 m) name lookup to OpenStreetMap's Nominatim,
-  and the install-time downloads from GitHub.
+  and the install-time downloads from GitHub. (As with any HTTPS request,
+  each of those hosts necessarily sees your public IP.)
 
 ## Connect your account
 
@@ -160,7 +161,9 @@ python3 ~/.aiwork/bin/places.py                          # list detected places
 python3 ~/.aiwork/bin/places.py aa:bb:cc:dd:ee:ff "wework" work   # name one
 ```
 
-Naming a place is what opts it into geolocation + map display.
+Naming a place upgrades it from the ~250 m grid cell to its exact
+coordinates on the map — unnamed places appear too, just coarsely (see the
+privacy table).
 
 One label is reserved: **"In transit"** (any capitalisation). Use it for
 stops that are really a moving Mac — hotspot cells along a commute. The

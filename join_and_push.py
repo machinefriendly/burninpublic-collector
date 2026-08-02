@@ -294,11 +294,12 @@ def api_delete(path, jwt):
             rng = resp.headers.get("content-range", "*/0")
             return int(rng.split("/")[-1] or 0)
     except urllib.error.HTTPError as err:
+        table = path.split("?")[0]
         raise SystemExit(
-            f"sweep of {path.split('?')[0]} failed: HTTP {err.code} "
+            f"sweep of {table} failed: HTTP {err.code} "
             f"{err.read().decode(errors='replace')[:400]}\n"
             "If this is a 403, the schema predates the sweep: apply\n"
-            "  GRANT DELETE ON public.aiwork_daily TO authenticated;")
+            f"  GRANT DELETE ON public.{table} TO authenticated;")
 
 
 def api(path, payload, jwt):

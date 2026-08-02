@@ -54,7 +54,11 @@ CREATE TABLE public.aiwork_places (
     PRIMARY KEY (user_id, place_hash)
 );
 ALTER TABLE public.aiwork_places ENABLE ROW LEVEL SECURITY;
-GRANT SELECT, INSERT, UPDATE ON public.aiwork_places TO authenticated;
+-- DELETE mirrors aiwork_daily: the collector retires place metadata rows —
+-- aliased fingerprints after a merge, and previously uploaded unnamed places
+-- under AIWORK_HIDE_UNNAMED=1 (the README promises that cleanup). RLS scopes
+-- every delete to the caller's own rows.
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.aiwork_places TO authenticated;
 CREATE POLICY aiwork_places_own ON public.aiwork_places
     FOR ALL TO authenticated
     USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
