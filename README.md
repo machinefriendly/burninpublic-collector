@@ -21,7 +21,9 @@ Two parts:
 ## Privacy model — what leaves your machine
 
 The collector is open source precisely so you can verify this table
-against the code (`join_and_push.py` is the only file that uploads).
+against the code. `join_and_push.py` is the only file that uploads your
+usage and place data; the only other network calls are sign-in
+(`login.py`) and the coarse Nominatim name lookup (`locate_places.py`).
 
 | Stays on your machine (never uploaded) | Uploaded to your account |
 |---|---|

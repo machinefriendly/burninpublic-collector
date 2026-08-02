@@ -33,6 +33,7 @@ chmod 700 "$HOME/.aiwork" "$LOG"
 rm -f /tmp/aiwork.collect.log /tmp/aiwork.freshen.log /tmp/aiwork.sync.log
 cp "$SRC"/collect_place.sh "$SRC"/parse_usage.py "$SRC"/join_and_push.py \
    "$SRC"/places.py "$SRC"/locate_places.py "$SRC"/place_key.py \
+   "$SRC"/alias_places.py \
    "$SRC"/login.py "$SRC"/dbperm.py "$SRC"/local_schema.sql "$BIN/"
 chmod +x "$BIN/collect_place.sh"
 
