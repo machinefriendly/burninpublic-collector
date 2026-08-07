@@ -41,6 +41,13 @@ def load_env_file():
     """SUPABASE_URL / SUPABASE_KEY from ~/.aiwork/supabase.env unless already set."""
     if not os.path.exists(ENV_FILE):
         return
+    # A self-hoster's file can hold their own keys, and it is written by hand
+    # under whatever umask happened to be in effect. Tighten it on the way in
+    # rather than trusting it — every other file this collector owns is 0600.
+    try:
+        os.chmod(ENV_FILE, 0o600)
+    except OSError:
+        pass
     with open(ENV_FILE) as fh:
         for line in fh:
             line = line.strip()
@@ -325,18 +332,42 @@ def api(path, payload, jwt):
 # Assembling this SQL from fragments would read as an injection site to any
 # reviewer or scanner even though every fragment is a constant.
 PLACE_QUERIES = {
-    (True, False): "SELECT mac, label, kind, lat, lon, geo_name FROM places "
+    (True, False): "SELECT mac, label, kind, last_seen, lat, lon, geo_name "
+                   "FROM places "
                    "WHERE (label IS NOT NULL OR lat IS NOT NULL) "
                    "AND alias_of IS NULL",
-    (True, True): "SELECT mac, label, kind, lat, lon, geo_name FROM places "
+    (True, True): "SELECT mac, label, kind, last_seen, lat, lon, geo_name "
+                  "FROM places "
                   "WHERE label IS NOT NULL AND TRIM(label) <> '' "
                   "AND alias_of IS NULL",
-    (False, True): "SELECT mac, label, kind FROM places "
+    (False, True): "SELECT mac, label, kind, last_seen FROM places "
                    "WHERE label IS NOT NULL AND TRIM(label) <> '' "
                    "AND alias_of IS NULL",
-    (False, False): "SELECT mac, label, kind FROM places "
+    (False, False): "SELECT mac, label, kind, last_seen FROM places "
                     "WHERE label IS NOT NULL AND alias_of IS NULL",
 }
+
+SEEN_ROUND_S = 15 * 60
+
+
+def coarse_time(ts):
+    """Round a sample time down to a 15-minute bucket, UTC.
+
+    `last_seen` is not new data — collect_place.sh has written it on every
+    5-minute sample since the first release; it simply never left the machine.
+    What it buys once uploaded is the dashboard being able to say which place
+    you are at *now*, and to tell a collector that is still running from one
+    that stopped months ago (rows alone cannot: they prove ownership, not
+    recency).
+
+    Rounded because the exact minute you arrived somewhere is a finer trace
+    than anything else here — the usage rollups are hourly — and a 15-minute
+    bucket answers both questions just as well. Rounded *down*, so the value
+    can only ever understate how recently you were seen."""
+    if not ts:
+        return None
+    bucket = (int(ts) // SEEN_ROUND_S) * SEEN_ROUND_S
+    return datetime.fromtimestamp(bucket, timezone.utc).isoformat()
 
 
 def coarse(lat, lon):
@@ -395,12 +426,12 @@ def sync_place_labels(db, salt, jwt, uid):
                    (label, key))
 
         entry = {"user_id": uid, "place_hash": phash, "label": label,
-                 "kind": kind}
-        if geo and row[3] is not None:
-            lat, lon = ((row[3], row[4])
+                 "kind": kind, "last_seen": coarse_time(row[3])}
+        if geo and row[4] is not None:
+            lat, lon = ((row[4], row[5])
                         if is_named(label) and not is_transit(label)
-                        else coarse(row[3], row[4]))
-            entry.update({"lat": lat, "lon": lon, "geo_name": row[5]})
+                        else coarse(row[4], row[5]))
+            entry.update({"lat": lat, "lon": lon, "geo_name": row[6]})
         payload.append(entry)
 
     db.commit()

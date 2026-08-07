@@ -50,6 +50,12 @@ CREATE TABLE public.aiwork_places (
     lat        DOUBLE PRECISION,
     lon        DOUBLE PRECISION,
     geo_name   TEXT,
+    -- When this place was last sampled, rounded DOWN to a 15-minute bucket by
+    -- the collector before upload. Lets the dashboard mark where you are now,
+    -- and distinguish a collector still running from one that stopped months
+    -- ago — rows alone prove ownership, not recency. Never finer than 15 min,
+    -- and it changes no coordinate's precision.
+    last_seen  TIMESTAMPTZ,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (user_id, place_hash)
 );

@@ -2,7 +2,7 @@
 """Log the collector into your BurnInPublic account (once per machine).
 
     python3 login.py                     # email -> one-time code from your inbox
-    python3 login.py EMAIL PASSWORD      # password fallback, non-interactive
+    python3 login.py EMAIL --password    # password fallback, prompts for it
 
 Passwordless by default: the same one-time email code as the web app, so
 Google / GitHub / magic-link accounts all work (Supabase links identities
@@ -10,6 +10,7 @@ by verified email). Stores a refresh token in ~/.aiwork/session.json
 (0600). Uploads then run as YOUR user under row-level security — no admin
 keys on this machine.
 """
+import getpass
 import json
 import os
 import ssl
@@ -77,9 +78,17 @@ def main():
     env = load_env()
     url, anon = env["SUPABASE_URL"], env["SUPABASE_ANON_KEY"]
 
-    if len(sys.argv) > 2:                       # password fallback
+    # Password fallback for self-hosters. Prompted, never taken as an
+    # argument: argv is visible to every process on the machine and lands in
+    # shell history, which is a poor place for a password to live.
+    args = [a for a in sys.argv[1:] if a != "--password"]
+    if len(sys.argv) > 1 and "--password" in sys.argv[1:]:
+        if len(args) > 1:
+            raise SystemExit("usage: login.py [EMAIL] --password")
+        email = args[0] if args else input("email: ")
         data = post(f"{url}/auth/v1/token?grant_type=password",
-                    {"email": sys.argv[1], "password": sys.argv[2]}, anon)
+                    {"email": email, "password": getpass.getpass("password: ")},
+                    anon)
         return save_session(data)
 
     email = sys.argv[1] if len(sys.argv) > 1 else input("email: ")

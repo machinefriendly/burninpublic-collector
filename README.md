@@ -28,11 +28,48 @@ usage and place data; the only other network calls are sign-in
 | Stays on your machine (never uploaded) | Uploaded to your account |
 |---|---|
 | Raw gateway MAC addresses (the place fingerprint) | A salted hash of each fingerprint — irreversible without the salt file that never leaves `~/.aiwork/salt` |
-| Per-request usage rows and timestamps | Hourly totals: tokens by UTC hour × place × source × model, plus active minutes |
+| Per-request usage rows and timestamps | Hourly totals: tokens by UTC hour × place × source × model, plus active minutes (full field list below) |
 | Project names, file paths | — |
 | Your prompts and code — the parser decodes each log line in memory only to pull out the token-count fields; **nothing of their content is stored or uploaded** | — |
 | Continuous location samples, and exact GPS fixes for every place **you have not named** | Which **~250 m cell** each detected place sits in, plus its neighbourhood name. Places **you named** upload their exact coordinates instead — naming is consent |
 | Your Claude Code / Codex history from *before* you installed the collector — parsed locally for your own reports, never uploaded | — |
+| The exact minute each place was last sampled (recorded locally every 5 minutes) | **`last_seen`**, rounded **down** to a 15-minute bucket, for every place that is uploaded at all — **including places you have not named**. It is re-sent every 15 minutes, so this is an ongoing "which place am I at now" signal, not a value written once. It marks the current place on the dashboard and separates a collector still running from one that stopped months ago (usage rows prove ownership, not recency). It adds no coordinate and changes no coordinate's precision. `AIWORK_HIDE_UNNAMED=1` removes it along with the unnamed places themselves |
+
+### Every field that is uploaded
+
+The table above is the summary; this is the whole list. Both payloads are
+built in `join_and_push.py` and nowhere else — search it for `payload` and you
+will find exactly these two.
+
+**Usage rows** (`aiwork_daily`), one per UTC hour × place × source × model:
+
+- `user_id` — your account id, the same one your login returns
+- `day`, `hour` — UTC date and hour of the work
+- `place_hash` — salted hash, or `null` for usage with no place attached
+- `source` (`claude` / `codex`), `model` — the model name as the log reports it
+- `requests`, `input_tokens`, `output_tokens`, `cache_read_tokens`,
+  `cache_creation_tokens` — counts only; the four token classes are separate
+  because they bill differently
+- `active_minutes` — how many distinct minutes in that hour had any activity
+- `uploaded_at` — the exact second **this upload ran**. This is finer than
+  hourly, so it is called out: it records when the collector synced, not when
+  you worked, and exists so a run can retire rows it has superseded
+
+**Place rows** (`aiwork_places`), one per place:
+
+- `user_id`, `place_hash` — as above
+- `label` — the name you gave the place, empty string if you never named it
+- `kind` — an optional free-text category you can type yourself when naming a
+  place (`places.py KEY label kind`), e.g. `home` or `cafe`. Nothing sets it
+  automatically; it is null until you write it. Being free text, whatever you
+  put there is uploaded verbatim, so the "no project names" line below means
+  the collector never *derives* one — it cannot stop you typing one in here
+- `last_seen` — see the table above
+- `lat`, `lon`, `geo_name` — only once a place has been located: the ~250 m
+  cell centre for unnamed places, the exact fix for named ones
+
+Nothing else. No prompts, no code, no project names, no file paths, no SSIDs,
+no raw MAC addresses.
 
 One third-party service is involved: OpenStreetMap's Nominatim, which turns
 coordinates into a place *name* (reverse geocoding). This happens
